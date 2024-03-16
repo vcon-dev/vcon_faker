@@ -1,2 +1,6 @@
 .env
 venv
+*.json
+*.mp3
+*.wav
+*.pyc
