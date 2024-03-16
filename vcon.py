@@ -12,6 +12,7 @@ class Vcon:
         self.uuid = uuid
         self.created_at = created_at
         self.updated_at = updated_at
+        self.vcon = "0.0.1"
 
     def add_dialog(self, dialog):
         self.dialog.append(dialog)
