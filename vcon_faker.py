@@ -18,11 +18,13 @@ from openai import OpenAI
 # Get the environment variables from secrets.toml
 
 AWS_ACCESS_KEY = st.secrets["AWS_ACCESS_KEY"]
-AWS_SECRET_KEY = st.secrets("AWS_SECRET_KEY")
-S3_BUCKET = st.secrets("S3_BUCKET", "fakevcons")
-OPENAI_API_KEY = st.secrets("OPENAI_API_KEY")
-OPENAI_MODEL = st.secrets("OPENAI_MODEL", "gpt-3.5-turbo")
-OPENAI_TTS_MODEL = st.secrets("OPENAI_TTS_MODEL", "tts-1")
+AWS_SECRET_KEY = st.secrets["AWS_SECRET_KEY"]
+S3_BUCKET = st.secrets["S3_BUCKET"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_MODEL = st.secrets["OPENAI_MODEL"]
+OPENAI_TTS_MODEL = st.secrets["OPENAI_TTS_MODEL"]
+
+print(f"Using model: {OPENAI_MODEL}, TTS model: {OPENAI_TTS_MODEL} and S3 bucket: {S3_BUCKET}")
 
 client = OpenAI()
 client.api_key = OPENAI_API_KEY
@@ -132,6 +134,7 @@ if generate:
             problem=problem,
             emotion=emotion)
         
+        print(generated_conversation)
         this_bar.progress(0.2, text="Synthesizing conversation audio")
         # Process each line of the conversation
         audio_files = []  # Initialize an empty list to store audio files
