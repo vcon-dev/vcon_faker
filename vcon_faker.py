@@ -14,15 +14,15 @@ warnings.filterwarnings(action='ignore', category=DeprecationWarning)
 
 
 from openai import OpenAI
-# Load environment variables from .env file
-load_dotenv()
 
-AWS_ACCESS_KEY = os.getenv("AWS_KEY_ID")
-AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
-S3_BUCKET = os.getenv("S3_BUCKET", "fakevcons")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
+# Get the environment variables from secrets.toml
+
+AWS_ACCESS_KEY = st.secrets["AWS_ACCESS_KEY"]
+AWS_SECRET_KEY = st.secrets("AWS_SECRET_KEY")
+S3_BUCKET = st.secrets("S3_BUCKET", "fakevcons")
+OPENAI_API_KEY = st.secrets("OPENAI_API_KEY")
+OPENAI_MODEL = st.secrets("OPENAI_MODEL", "gpt-3.5-turbo")
+OPENAI_TTS_MODEL = st.secrets("OPENAI_TTS_MODEL", "tts-1")
 
 client = OpenAI()
 client.api_key = OPENAI_API_KEY

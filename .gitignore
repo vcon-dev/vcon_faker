@@ -4,3 +4,4 @@ venv
 *.mp3
 *.wav
 *.pyc
+.streamlit
