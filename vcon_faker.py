@@ -161,6 +161,12 @@ if generate:
 
         combined_audio = AudioSegment.silent(duration=0)
         for item in generated_conversation:
+            # Sometimes this is not a valid item, so we need to check
+            # Make sure it's a dict, and that it has a 'message' key
+            if not isinstance(item, dict):
+                continue
+            if 'message' not in item:
+                continue
             role = item['speaker']
             speech_file_path = "_temp.mp3"
             response = client.audio.speech.create(
