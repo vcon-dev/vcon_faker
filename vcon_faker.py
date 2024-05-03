@@ -209,8 +209,11 @@ if generate:
         this_bar.progress(0.6, text="uploading audio file")
         s3_client.upload_file(file_name, bucket_name, s3_path)
 
-        # Get the URL of the uploaded file
-        url = s3_client.generate_presigned_url('get_object', Params={'Bucket': bucket_name, 'Key': s3_path})
+        # Make the uploaded file public
+        s3_client.put_object_acl(ACL='public-read', Bucket=bucket_name, Key=s3_path)
+
+        # Get the public URL of the uploaded file
+        url = f"https://{bucket_name}.s3.amazonaws.com/{s3_path}"
 
         # Now create the vCon from this conversation
         # Create a vCon object from the generated conversation
