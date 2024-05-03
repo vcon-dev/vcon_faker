@@ -46,14 +46,18 @@ def generate_conversation(prompt, agent_name, customer_name, business, problem, 
     result = json.loads(completion.choices[0].message.content)
     return result.get("conversation", [])
 
+
 default_conversation_prompt = """
-Generate a fake conversation between a customer and an agent.  
-The agent should introduce themselves, their company and give the customer their name. The agent should ask for the customer's name.
-As part of the conversation, have the agent ask for two pieces of personal information.  
-Spell out numbers. For example, 1000 should be said as one zero zero zero, not one thousand.
-The conversation should be at least 10 lines long and be complete. At the end
-of the conversation, the agent should thank the customer for their time and end the conversation.
-Return the conversation formatted like the following example:
+Generate a fake conversation between a customer and an agent.
+The agent should introduce themselves, their company and give the customer
+their name. The agent should ask for the customer's name.
+As part of the conversation, have the agent ask for two pieces of
+personal information.  Spell out numbers. For example, 1000 should be
+said as one zero zero zero, not one thousand. The conversation should be
+at least 10 lines long and be complete. At the end
+of the conversation, the agent should thank the customer for their time
+and end the conversation. Return the conversation formatted 
+like the following example:
 
 {'conversation': 
     [
@@ -70,7 +74,12 @@ Return the conversation formatted like the following example:
 
 col1, col2 = st.columns(2)
 col1.title("Fake Conversation Generator")
-col2.markdown("This app generates fake conversations between a customer and an agent.  The conversation is generated based on a prompt and includes the names of the agent and customer, the business, the problem, and the emotion of the customer.  The conversation is then synthesized into an audio file, a vCon is created then it is uploaded into S3.") 
+col2.markdown("This app generates fake conversations between a customer and \
+            an agent. The conversation is generated based on a prompt and \
+            includes the names of the agent and customer, the business, \
+            the problem, and the emotion of the customer.  The conversation \
+            is then synthesized into an audio file, a vCon is created then\
+            it is uploaded into S3.") 
 
 num_conversations = col2.number_input("Number of Conversations to Generate", 1, 20, 1)
 generate = col2.button("Generate Conversation(s)")
@@ -242,6 +251,7 @@ if generate:
         # Save the generation information to an attachment
         generation_info = {
             "type":"generation_info",
+            "encoding":"none",
             "body": {
                 "agent_name": agent_name,
                 "customer_name": customer_name,
@@ -259,7 +269,7 @@ if generate:
             "type": "transcript",
             "dialog": 0,
             "vendor": 'openai',
-            "encoding": "json",
+            "encoding": "none",
             "body": generated_conversation,
             "vendor_schema": {
                 "model": OPENAI_MODEL,
