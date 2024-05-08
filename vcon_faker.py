@@ -81,7 +81,10 @@ col2.markdown("This app generates fake conversations between a customer and \
             is then synthesized into an audio file, a vCon is created then\
             it is uploaded into S3.") 
 
-num_conversations = col2.number_input("Number of Conversations to Generate", 1, 20, 1)
+num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
+
+# select business from a dropdown
+business = col2.selectbox("Select Business", businesses)
 generate = col2.button("Generate Conversation(s)")
 st.toast(f"Configured to use model: {OPENAI_MODEL}, TTS model: {OPENAI_TTS_MODEL} and S3 bucket: {S3_BUCKET}")
 
@@ -117,7 +120,6 @@ if generate:
         # Generate the conversations and pick random names for the agent and customer
         agent_name = random.choice(male_names) + " " + random.choice(last_names)
         customer_name = random.choice(female_names) + " " + random.choice(last_names)
-        business = random.choice(businesses)
         problem = random.choice(problems)
         emotion = random.choice(emotions)
 
@@ -166,6 +168,8 @@ if generate:
             if not isinstance(item, dict):
                 continue
             if 'message' not in item:
+                continue
+            if len(item['message']) == 0:
                 continue
             role = item['speaker']
             speech_file_path = "_temp.mp3"
