@@ -29,6 +29,7 @@ class Vcon:
     def to_dict(self):
         return {
             "uuid": self.uuid,
+            "vcon": self.vcon,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "dialog": self.dialog,
@@ -64,6 +65,7 @@ class Vcon:
     def from_dict(cls, vcon_dict):
         return cls(
             uuid=vcon_dict.get("uuid"),
+            vcon=vcon_dict.get("vcon"),
             created_at=vcon_dict.get("created_at"),
             updated_at=vcon_dict.get("updated_at"),
             dialog=vcon_dict.get("dialog"),
