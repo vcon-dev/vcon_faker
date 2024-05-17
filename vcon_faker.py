@@ -30,11 +30,7 @@ client = OpenAI()
 client.api_key = OPENAI_API_KEY
 
 
-def generate_conversation(prompt, agent_name, customer_name, business, problem, emotion):
-    prompt += f"\n\nIn this conversation, the agent's name is {agent_name} and the customer's name is {customer_name}.  "
-    prompt += f"The conversation is about a problem related to a {business} .  "
-    prompt += f"The problem is related to {problem}.  The customer is feeling {emotion}."
-
+def generate_conversation(prompt, agent_name, customer_name, business, problem, emotion, business_name):
     completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         response_format={ "type": "json_object" },
@@ -71,20 +67,24 @@ like the following example:
 
 # Set a slider to control the number of conversations to generate
 # Generate the conversation based on the prompt trigger
+st.title("Fake Conversation Generator")
 
 col1, col2 = st.columns(2)
-col1.title("Fake Conversation Generator")
-col2.markdown("This app generates fake conversations between a customer and \
-            an agent. The conversation is generated based on a prompt and \
-            includes the names of the agent and customer, the business, \
-            the problem, and the emotion of the customer.  The conversation \
-            is then synthesized into an audio file, a vCon is created then\
-            it is uploaded into S3.") 
 
-num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
 
 # select business from a dropdown
 business = col2.selectbox("Select Business", businesses)
+problem = col2.selectbox("Select Problem", problems)
+business_name = col2.text_input("Business Name", "a random business")
+col1.markdown("This app generates fake conversations between a customer and \
+            an agent. The conversation is generated based on a prompt and \
+            includes the names of the agent and customer, the business, \
+            the problem, and the emotion of the customer.  The conversation \
+            is then synthesized into an audio file, a vCon is created then \
+            it is uploaded into S3.") 
+
+add_emotion = col2.checkbox("Add emotion to conversation.")
+num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
 generate = col2.button("Generate Conversation(s)")
 st.toast(f"Configured to use model: {OPENAI_MODEL}, TTS model: {OPENAI_TTS_MODEL} and S3 bucket: {S3_BUCKET}")
 
@@ -120,7 +120,6 @@ if generate:
         # Generate the conversations and pick random names for the agent and customer
         agent_name = random.choice(male_names) + " " + random.choice(last_names)
         customer_name = random.choice(female_names) + " " + random.choice(last_names)
-        problem = random.choice(problems)
         emotion = random.choice(emotions)
 
         # create a random fake phone number for the agent, and one for the customer
@@ -137,15 +136,28 @@ if generate:
 
         total_bar.progress((i+1)/num_conversations, text=f"Generating conversation {i+1} of {num_conversations}")
         this_bar = st.progress(0, text="Generating conversation transcript.")
+        
+        while business == 'Pick Random Business Type':
+            business = random.choice(businesses)
+            
+        while problem == 'random situation':
+            problem = random.choice(problems)
+        
+        generation_prompt = conversation_prompt
+        generation_prompt += f"\n\nIn this conversation, the agent's name is {agent_name} and the customer's name is {customer_name}.  "
+        generation_prompt += f"The conversation is about {business_name} (a {business} ) and is a conversation about {problem}."
+        if add_emotion:
+            generation_prompt += "The customer is feeling {emotion}."
+
         generated_conversation = generate_conversation(
             conversation_prompt,
             agent_name=agent_name,
             customer_name=customer_name,
             business=business,
             problem=problem,
-            emotion=emotion)
+            emotion=emotion,
+            business_name=business_name)
         
-        print(generated_conversation)
         this_bar.progress(0.2, text="Synthesizing conversation audio")
         # Process each line of the conversation
         audio_files = []  # Initialize an empty list to store audio files
@@ -268,7 +280,7 @@ if generate:
                 "business": business,
                 "problem": problem,
                 "emotion": emotion,
-                "prompt": conversation_prompt,
+                "prompt": generation_prompt,
                 "created_on": datetime.now().isoformat(),
                 "model": OPENAI_MODEL
             }
@@ -283,7 +295,7 @@ if generate:
             "body": generated_conversation,
             "vendor_schema": {
                 "model": OPENAI_MODEL,
-                "prompt": conversation_prompt
+                "prompt": generation_prompt
             }
         }
 
@@ -317,12 +329,15 @@ if generate:
         # Get the URL of the uploaded file
         vcon_url = s3_client.generate_presigned_url('get_object', Params={'Bucket': bucket_name, 'Key': s3_path})
 
-
+        summary = f"Conversation between {agent_name} and {customer_name} about {business_name}, a {business},  related to {problem}. "
+        if add_emotion:
+            summary += f"The customer is {emotion}"
+            
         completed_conversations.append({
             "vcon_uuid": vcon_uuid,
             "vcon_url": vcon_url,
             "creation_time": creation_time,
-            "summary": f"Conversation between {agent_name} and {customer_name} about a {business} problem related to {problem}.  The customer is feeling {emotion}. "
+            "summary": summary
         })           
         # Remove the temporary files
         os.remove(combined_file)
