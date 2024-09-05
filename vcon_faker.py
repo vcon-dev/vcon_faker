@@ -5,15 +5,19 @@ import os
 import json
 import random
 import streamlit as st
-import vcon
+from vcon import Vcon
+from vcon.party import Party
+from vcon.dialog import Dialog
+
 from datetime import datetime
 import uuid
 from fake_names import male_names, female_names, last_names, businesses, problems, emotions
 import warnings
 warnings.filterwarnings(action='ignore', category=DeprecationWarning)
-
-
 from openai import OpenAI
+
+load_dotenv()
+
 
 # Get the environment variables from secrets.toml
 
@@ -235,46 +239,36 @@ if generate:
         url = f"https://{bucket_name}.s3.amazonaws.com/{s3_path}"
 
         # Now create the vCon from this conversation
-        # Create a vCon object from the generated conversation
-        agent_party = {
-                "tel": agent_phone,
-                "meta": {
-                    "role": "agent"
-                },
-                "name": agent_name,
-                "mailto": agent_email
-            }
-        customer_party = {
-                "tel": customer_phone,
-                "meta": {
-                    "role": "customer"
-                },
-                "name": customer_name,
-                "email": customer_email
-            }
-        dialog_info = {
-            "alg": "SHA-512",
-            "url": url,
-            "meta": {
-                "direction": "in",
-                "disposition": "ANSWERED"
-            },
-            "type": "recording",
-            "start": datetime.now().isoformat(),
-            "parties": [
-                1,
-                0
-            ],
-            "duration": audio_duration,
-            "filename": file_name,
-            "mimetype": "audio/mp3"
-        }
+                # Create a vCon object from the generated conversation
 
-        # Save the generation information to an attachment
+        agent_party = Party(
+            name=agent_name,
+            tel=agent_phone,
+            mailto=agent_email,
+            meta={"role": "agent"}
+        )
+
+        customer_party = Party(
+            name=customer_name,
+            tel=customer_phone,
+            mailto=customer_email,
+            meta={"role": "customer"}
+        )
+
+        # Need to add direction to the conversationFIX
+        dialog_info = Dialog(
+            start=datetime.now().isoformat(),
+            parties=[0, 1],
+            type="recording",
+            body="",
+            disposition="ANSWERED",
+            duration=audio_duration
+        )
+        dialog_info.add_external_data(url, file_name, "audio/mp3")
+
         generation_info = {
-            "type":"generation_info",
-            "encoding":"none",
-            "body": {
+             "type": "generation_info",
+             "body": {
                 "agent_name": agent_name,
                 "customer_name": customer_name,
                 "business": business,
@@ -282,43 +276,34 @@ if generate:
                 "emotion": emotion,
                 "prompt": generation_prompt,
                 "created_on": datetime.now().isoformat(),
-                "model": OPENAI_MODEL
-            }
+                "model": OPENAI_MODEL                 
+             }
         }
 
-        # Save the transcript of the conversation as an analysis
         analysis_info = {
-            "type": "transcript",
             "dialog": 0,
             "vendor": 'openai',
-            "encoding": "none",
+            "type": "analysis_info",
             "body": generated_conversation,
-            "vendor_schema": {
-                "model": OPENAI_MODEL,
-                "prompt": generation_prompt
+            "extra": {
+                "vendor_schema": {
+                    "model": OPENAI_MODEL,
+                    "prompt": generation_prompt                    
+                }
             }
         }
 
-        
-        creation_time = datetime.now().isoformat()
-        # Create the vCon object
-        vcon_obj = vcon.Vcon(
-            parties=[agent_party, customer_party],
-            dialog=[dialog_info],
-            attachments=[generation_info],
-            analysis=[analysis_info],
-            uuid=vcon_uuid,
-            created_at=creation_time,
-            updated_at=creation_time
-        )
-        vcon_obj.sign_dialogs()
-
-        # Save the vCon object to a JSON file
+        vcon_obj = Vcon.build_new()
+        vcon_obj.add_party(agent_party)
+        vcon_obj.add_party(customer_party)
+        vcon_obj.add_dialog(dialog_info)
+        vcon_obj.add_attachment(**generation_info,)
+        vcon_obj.add_analysis(**analysis_info)
         vcon_json = vcon_obj.to_json()
         vcon_file = f"{vcon_uuid}.vcon.json"
         with open(vcon_file, 'w') as file:
             file.write(vcon_json)
-
+            
         # Upload the vCon JSON file to S3 bucket
         s3_path = f"{year}/{month}/{day}/{vcon_file}"
 
@@ -336,7 +321,7 @@ if generate:
         completed_conversations.append({
             "vcon_uuid": vcon_uuid,
             "vcon_url": vcon_url,
-            "creation_time": creation_time,
+            "creation_time": datetime.now().isoformat(),
             "summary": summary
         })           
         # Remove the temporary files
