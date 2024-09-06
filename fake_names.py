@@ -14,6 +14,7 @@ businesses = [
     'Art Gallery', 
     'Art School', 
     'Auto Repair Shop', 
+    'Auto Insurance Company',
     'Bakery', 
     'Bar', 
     'Batting Cages', 
@@ -21,6 +22,7 @@ businesses = [
     'Bicycle Shop', 
     'Bookstore', 
     'Bowling Alley', 
+    'Brokerage Company',
     'Cafe', 
     'Car Dealership', 
     'Car Rental Agency', 
@@ -86,6 +88,7 @@ businesses = [
     'Public Relations Firm', 
     'Real Estate Agency', 
     'Restaurant', 
+    'Retirement Advisory Service',
     'Roofing Service', 
     'Security Company', 
     'Shoe Repair Service', 
@@ -110,18 +113,21 @@ businesses = [
     ]
 
 # Example list of problems
-problems = ['typical situation', 
-            'random situation',
-            'billing', 
-            'shipping', 
-            'returns', 
-            'customer service', 
-            'product quality', 
-            'inventory',
-            'pricing', 
-            'security', 
-            'privacy', 
-            'data management']
+problems = [
+    'billing', 
+    'customer service', 
+    'data management',
+    'inventory',
+    'pricing', 
+    'privacy', 
+    'product quality', 
+    'random situation',
+    'request for personal information',
+    'returns', 
+    'security', 
+    'shipping', 
+    'typical situation'
+]
 
 # Example list of emotions
 emotions = ['happy', 'sad', 'angry', 'frustrated', 'confused', 'excited', 'nervous', 'relieved', 'surprised', 'disappointed', 'relaxed', 'anxious']
