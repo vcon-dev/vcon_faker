@@ -1788,13 +1788,13 @@ files = [
 
 [[package]]
 name = "vcon"
-version = "0.3.5"
+version = "0.3.6"
 description = "The vCon library"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "vcon-0.3.5-py3-none-any.whl", hash = "sha256:6b5c7990fed812614e779249d01a55f2c4749fb1b07e4935995f72dbd88c9b00"},
-    {file = "vcon-0.3.5.tar.gz", hash = "sha256:fc07c2b340f02a071ad63ed7e69a30a10809da15b16290ea9b22c69cc9e51d03"},
+    {file = "vcon-0.3.6-py3-none-any.whl", hash = "sha256:ef05bced507f4434c1df197f98b21c45e28cc08b9179f46cb953dc6536faaff7"},
+    {file = "vcon-0.3.6.tar.gz", hash = "sha256:040d8485e18a5c1f5a593c3edf9b37942ebbf4c7253596b748ff5b7c31a3bf48"},
 ]
 
 [package.dependencies]
@@ -1803,6 +1803,7 @@ pydash = ">=8.0.3,<9.0.0"
 pytest = ">=8.3.2,<9.0.0"
 pytest-cov = ">=5.0.0,<6.0.0"
 pytest-mock = ">=3.14.0,<4.0.0"
+python-dateutil = ">=2.9.0.post0,<3.0.0"
 requests = ">=2.32.3,<3.0.0"
 uuid6 = ">=2024.7.10,<2025.0.0"
 
