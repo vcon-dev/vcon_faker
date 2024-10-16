@@ -177,7 +177,7 @@ if generate:
             generation_prompt += "The customer is feeling {emotion}."
 
         generated_conversation = generate_conversation(
-            conversation_prompt,
+            generation_prompt,
             agent_name=agent_name,
             customer_name=customer_name,
             business=business,
