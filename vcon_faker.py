@@ -254,9 +254,9 @@ if generate:
         s3_client.put_object(Bucket=bucket_name, Key=f"{year}/{month}/{day}/")
 
         filename = combined_file
-        s3_path = f"{year}/{month}/{day}/{file_name}"
+        s3_path = f"{year}/{month}/{day}/{filename}"
         this_bar.progress(0.6, text="uploading audio file")
-        s3_client.upload_file(file_name, bucket_name, s3_path)
+        s3_client.upload_file(filename, bucket_name, s3_path)
 
         # Get the public URL of the uploaded file
         url = f"https://{bucket_name}.s3.amazonaws.com/{s3_path}"
@@ -286,7 +286,7 @@ if generate:
             disposition="ANSWERED",
             duration=audio_duration,
         )
-        dialog_info.add_external_data(url, file_name, "audio/mp3")
+        dialog_info.add_external_data(url, filename, "audio/mp3")
 
         generation_info = {
             "type": "generation_info",
