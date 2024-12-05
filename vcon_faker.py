@@ -280,7 +280,9 @@ if generate:
             start=datetime.now().isoformat(),
             parties=[0, 1],
             type="recording",
-            body="",
+            url=url,
+            file_name=file_name,
+            encoding="audio/mp3",
             disposition="ANSWERED",
             duration=audio_duration,
         )
