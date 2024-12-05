@@ -253,7 +253,7 @@ if generate:
         s3_client.put_object(Bucket=bucket_name, Key=f"{year}/{month}/")
         s3_client.put_object(Bucket=bucket_name, Key=f"{year}/{month}/{day}/")
 
-        file_name = combined_file
+        filename = combined_file
         s3_path = f"{year}/{month}/{day}/{file_name}"
         this_bar.progress(0.6, text="uploading audio file")
         s3_client.upload_file(file_name, bucket_name, s3_path)
@@ -281,7 +281,7 @@ if generate:
             parties=[0, 1],
             type="recording",
             url=url,
-            file_name=file_name,
+            filename=filename,
             encoding="audio/mp3",
             disposition="ANSWERED",
             duration=audio_duration,
