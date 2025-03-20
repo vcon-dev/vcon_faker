@@ -61,6 +61,31 @@ s3_client = boto3.client(
 )
 
 
+def get_available_openai_models():
+    """Fetch available OpenAI models or return default list if API call fails."""
+    try:
+        # Attempt to get models from the OpenAI API
+        models = client.models.list()
+        model_ids = [model.id for model in models.data]
+        
+        # Separate models into categories without filtering
+        chat_models = model_ids.copy()
+        tts_models = [m for m in model_ids if "tts" in m.lower()]
+        
+        # Sort models by name
+        chat_models.sort()
+        tts_models.sort()
+        
+        logger.info(f"Retrieved {len(chat_models)} models and {len(tts_models)} TTS models from OpenAI API")
+        return chat_models, tts_models
+    except Exception as e:
+        logger.warning(f"Failed to fetch models from OpenAI API: {e}")
+        # Default model lists if API call fails
+        default_chat_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
+        default_tts_models = ["tts-1", "tts-1-hd"]
+        return default_chat_models, default_tts_models
+
+
 def ensure_s3_bucket_exists(bucket_name):
     """Ensure the S3 bucket exists, create if it doesn't."""
     try:
@@ -372,6 +397,7 @@ def process_conversation(
             problem,
             emotion,
             business_name,
+            model=OPENAI_MODEL
         )
 
         if not conversation:
@@ -480,7 +506,7 @@ def process_conversation(
 
 
 def generate_conversation(
-    prompt, agent_name, customer_name, business, problem, emotion, business_name
+    prompt, agent_name, customer_name, business, problem, emotion, business_name, model=OPENAI_MODEL
 ):
     """Generate a conversation between an agent and customer using OpenAI.
 
@@ -492,16 +518,17 @@ def generate_conversation(
         problem (str): The problem/situation being discussed
         emotion (str): Customer's emotional state
         business_name (str): Name of the business
+        model (str): OpenAI model to use for generation
 
     Returns:
         list: List of conversation turns with speaker and message
     """
     logger.info(
         f"Generating conversation for {agent_name} and {customer_name} "
-        f"about {business_name} ({business})"
+        f"about {business_name} ({business}) using model {model}"
     )
     completion = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=model,
         response_format={"type": "json_object"},
         messages=[
             {
@@ -566,43 +593,74 @@ like the following example:
 st.title("Fake Conversation Generator")
 
 col1, col2 = st.columns(2)
+with col1:
+    # select business from a dropdown
+    business = col1.selectbox("Select Business", businesses)
+    problem = col1.selectbox("Select Problem", problems)
+    business_name = col1.text_input("Business Name", "a random business")
+with col2:
+    # Get available models
+    chat_models, tts_models = get_available_openai_models()
+    
+    # Attempt to set default selected model to the one from secrets
+    default_chat_model_index = 0
+    if OPENAI_MODEL in chat_models:
+        default_chat_model_index = chat_models.index(OPENAI_MODEL)
+    
+    default_tts_model_index = 0
+    if OPENAI_TTS_MODEL in tts_models:
+        default_tts_model_index = tts_models.index(OPENAI_TTS_MODEL)
+    
+    # Add model selection dropdowns
+    selected_model = col2.selectbox(
+        "Select Chat Model", 
+        chat_models, 
+        index=default_chat_model_index
+    )
+    
+    # Add conversation type selection
+    conversation_type = col2.radio(
+        "Conversation Type",
+        ["voice", "messaging"],
+        format_func=lambda x: "Voice Call" if x == "voice" else "Text Messaging"
+    )
+    
+    if conversation_type == "voice":
+        generate_audio = col2.checkbox("Generate audio files", value=False)
+        if generate_audio:
+            selected_tts_model = col2.selectbox(
+                "Select TTS Model", 
+                tts_models, 
+                index=default_tts_model_index
+            )
+        else:
+            selected_tts_model = OPENAI_TTS_MODEL
+    else:
+        generate_audio = False
+        selected_tts_model = OPENAI_TTS_MODEL
 
-# select business from a dropdown
-business = col2.selectbox("Select Business", businesses)
-problem = col2.selectbox("Select Problem", problems)
-business_name = col2.text_input("Business Name", "a random business")
-col1.markdown(
-    "This app generates fake conversations between a customer and \
-            an agent. The conversation is generated based on a prompt and \
-            includes the names of the agent and customer, the business, \
-            the problem, and the emotion of the customer.  The conversation \
-            is then synthesized into an audio file, a vCon is created then \
-            it is uploaded into S3."
-)
+    add_emotion = col2.checkbox("Add emotion to conversation.")
+    if conversation_type == "messaging" and generate_audio:
+        generate_audio = False
+        st.warning("Audio generation is not available for messaging conversations.")
 
-# Add conversation type selection
-conversation_type = col2.radio(
-    "Conversation Type",
-    ["voice", "messaging"],
-    format_func=lambda x: "Voice Call" if x == "voice" else "Text Messaging"
-)
-
-add_emotion = col2.checkbox("Add emotion to conversation.")
-generate_audio = col2.checkbox("Generate audio files", value=False, disabled=(conversation_type == "messaging"))
-if conversation_type == "messaging" and generate_audio:
-    generate_audio = False
-    st.warning("Audio generation is not available for messaging conversations.")
-
-num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
-generate = col2.button("Generate Conversation(s)")
-st.toast(
-    f"Configured to use model: {OPENAI_MODEL}, TTS model: {OPENAI_TTS_MODEL} and S3 bucket: {S3_BUCKET}"
-)
+    num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
+    generate = col2.button("Generate Conversation(s)")
+    st.toast(
+        f"Using model: {selected_model}, TTS model: {selected_tts_model} and S3 bucket: {S3_BUCKET}"
+    )
 
 # Display the instructions in the sidebar
 with st.sidebar:
     instructions = f"""    
-    
+    ## Overview
+    This app generates fake conversations between a customer and 
+    an agent. The conversation is generated based on a prompt and 
+    includes the names of the agent and customer, the business, 
+    the problem, and the emotion of the customer.  The conversation 
+    is then synthesized into an audio file, a vCon is created then 
+    it is uploaded into S3.
+
     ## Instructions
 
     1. Select the conversation type (Voice Call or Text Messaging).
@@ -684,3 +742,4 @@ if generate:
         st.markdown(conv["summary"])
         st.markdown(f"**vCon URL:** [Download vCon]({conv['vcon_url']})")
         st.markdown("---")
+
