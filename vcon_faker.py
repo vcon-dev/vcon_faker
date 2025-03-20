@@ -7,7 +7,7 @@ import os
 import random
 import uuid
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Third-party imports
 import boto3
@@ -101,7 +101,8 @@ def create_vcon_object(
     emotion,
     generation_prompt,
     conversation,
-    generate_audio=False
+    generate_audio=False,
+    conversation_type="voice"
 ):
     """Create and return a vCon object with all components.
     
@@ -123,6 +124,7 @@ def create_vcon_object(
         generation_prompt (str): The base prompt template for conversation generation
         conversation (list): List of conversation turns with speaker and message
         generate_audio (bool): Whether to generate audio files. Defaults to False.
+        conversation_type (str): Type of conversation - "voice" or "messaging". Defaults to "voice".
 
     Returns:
         Vcon: The created vCon object
@@ -144,124 +146,179 @@ def create_vcon_object(
     safe_emotion = sanitize_for_json(emotion) if emotion else None
     safe_prompt = sanitize_for_json(generation_prompt)
 
-    # Create customer ID
-    customer_id = f"{customer_phone}_{customer_email}_1100"
-
-    # Create parties with IDs
-    agent_party = Party(
-        id=agent_email,
-        name=safe_agent_name,
-        tel=agent_phone,
-        mailto=agent_email,
-        role="agent",
-        meta={
-            "role": "agent",
-            "extension": "2212",
-            "cxm_user_id": "891"
-        }
-    )
-
-    customer_party = Party(
-        id=customer_id,
-        name=safe_customer_name,
-        tel=customer_phone,
-        mailto=customer_email,
-        role="customer",
-        meta={
-            "role": "customer"
-        }
-    )
-
-    # Create dialog with updated metadata
-    dialog_info = Dialog(
-        type="recording" if generate_audio else "text",
-        start=datetime.now().isoformat(),
-        parties=[1, 0],  # Agent is 1, Customer is 0
-        url=url if generate_audio else None,
-        filename=filename if generate_audio else None,
-        mimetype="audio/x-wav" if generate_audio else "text/plain",
-        alg="SHA-512" if generate_audio else None,
-        signature=signature if generate_audio else None,
-        duration=audio_duration if generate_audio else None,
-        meta={
-            "disposition": "ANSWERED",
-            "direction": "out",
-            "agent_selected_disposition": "VM Left",
-            "is_dealer_manually_set": False,
-            "engaged": False
-        }
-    )
-
     # Create vCon object
     vcon = Vcon.build_new()
-    vcon.add_party(customer_party)  # Add customer first (index 0)
-    vcon.add_party(agent_party)     # Add agent second (index 1)
-    vcon.add_dialog(dialog_info)
 
-    # Build transcript from conversation
-    transcript_text = ""
-    for turn in conversation:
-        if isinstance(turn, dict):
-            message = sanitize_for_json(turn.get("message", ""))
-            transcript_text += message + "\n\n"
+    # Different approaches based on conversation type
+    if conversation_type == "messaging":
+        # For messaging, we'll create a simplified structure
+        agent_party = Party(
+            id=agent_email,
+            name=safe_agent_name,
+            tel="",
+            mailto=agent_email,
+            role="agent"
+        )
 
-    # Add transcript analysis
-    transcript_info = {
-        "type": "transcript",
-        "dialog": 0,
-        "vendor": "deepgram" if generate_audio else "text",
-        "body": {
-            "transcript": transcript_text.strip(),
-            "confidence": 0.99,
-            "detected_language": "en"
-        },
-        "encoding": "none"
-    }
+        customer_party = Party(
+            id=customer_phone,
+            name=customer_phone,
+            tel=customer_phone,
+            mailto=customer_email,
+            role="contact"
+        )
 
-    # Add summary analysis
-    summary_info = {
-        "type": "summary",
-        "dialog": 0,
-        "vendor": "openai",
-        "body": f"In this conversation, {safe_agent_name} from {safe_business_name} discusses {safe_problem} with {safe_customer_name}. The agent provides assistance and information about {safe_business}.",
-        "encoding": "none"
-    }
+        # Add parties
+        vcon.add_party(agent_party)     # Agent first (index 0)
+        vcon.add_party(customer_party)  # Customer second (index 1)
+        
+        # Generate message timestamps
+        base_time = datetime.now() + timedelta(days=365)  # Future date (next year)
+        base_time = base_time.replace(hour=9, minute=0, second=0, microsecond=0)
+        
+        # Add dialog entries for each message
+        for i, turn in enumerate(conversation):
+            if not isinstance(turn, dict) or "message" not in turn:
+                continue
+                
+            # Determine the party index based on speaker
+            party_index = 1 if turn["speaker"] == "Customer" else 0
+            
+            # Add time between messages (2-5 minutes)
+            if i > 0:
+                base_time += timedelta(minutes=random.randint(2, 5), seconds=random.randint(0, 59))
+            
+            # Create Dialog object instead of dictionary
+            dialog_entry = Dialog(
+                type="text",
+                start=base_time.isoformat() + "+00:00",
+                parties=[party_index],
+                originator=party_index,
+                mimetype="text/plain",
+                body=turn["message"]
+            )
+            
+            vcon.add_dialog(dialog_entry)
+        
+    else:
+        # Traditional voice conversation approach
+        # Create customer ID
+        customer_id = f"{customer_phone}_{customer_email}_1100"
 
+        # Create parties with IDs
+        agent_party = Party(
+            id=agent_email,
+            name=safe_agent_name,
+            tel=agent_phone,
+            mailto=agent_email,
+            role="agent",
+            meta={
+                "role": "agent",
+                "extension": "2212",
+                "cxm_user_id": "891"
+            }
+        )
 
-    # Add diarized analysis
-    diarized_info = {
-        "type": "diarized",
-        "dialog": 0,
-        "vendor": "openai",
-        "body": transcript_text.strip(),
-        "encoding": "none"
-    }
+        customer_party = Party(
+            id=customer_id,
+            name=safe_customer_name,
+            tel=customer_phone,
+            mailto=customer_email,
+            role="customer",
+            meta={
+                "role": "customer"
+            }
+        )
 
-    # Add all analyses
-    vcon.add_analysis(**transcript_info)
-    vcon.add_analysis(**summary_info)
-    vcon.add_analysis(**diarized_info)
+        # Add parties
+        vcon.add_party(customer_party)  # Add customer first (index 0)
+        vcon.add_party(agent_party)     # Add agent second (index 1)
 
-    # Add attachments
-    vcon.add_attachment(
-        type="bria_call_ended",
-        body={
-            "email": agent_email,
-            "extension": "2212",
-            "isDealerManuallySet": False,
-            "dealerId": 1100,
-            "dealerName": safe_business_name,
-            "agentName": safe_agent_name,
-            "agentSelectedDisposition": "VM Left",
-            "customerNumber": customer_phone,
-            "direction": "out",
-            "duration": audio_duration if generate_audio else 0,
-            "state": "ANSWERED",
-            "received_at": datetime.now().isoformat()
-        },
-        encoding="none"
-    )
+        # Create dialog with updated metadata
+        dialog_info = Dialog(
+            type="recording" if generate_audio else "text",
+            start=datetime.now().isoformat(),
+            parties=[1, 0],  # Agent is 1, Customer is 0
+            url=url if generate_audio else None,
+            filename=filename if generate_audio else None,
+            mimetype="audio/x-wav" if generate_audio else "text/plain",
+            alg="SHA-512" if generate_audio else None,
+            signature=signature if generate_audio else None,
+            duration=audio_duration if generate_audio else None,
+            meta={
+                "disposition": "ANSWERED",
+                "direction": "out",
+                "agent_selected_disposition": "VM Left",
+                "is_dealer_manually_set": False,
+                "engaged": False
+            }
+        )
+        
+        # Add dialog
+        vcon.add_dialog(dialog_info)
 
+        # Build transcript from conversation
+        transcript_text = ""
+        for turn in conversation:
+            if isinstance(turn, dict):
+                message = sanitize_for_json(turn.get("message", ""))
+                transcript_text += message + "\n\n"
+
+        # Add transcript analysis
+        transcript_info = {
+            "type": "transcript",
+            "dialog": 0,
+            "vendor": "deepgram" if generate_audio else "text",
+            "body": {
+                "transcript": transcript_text.strip(),
+                "confidence": 0.99,
+                "detected_language": "en"
+            },
+            "encoding": "none"
+        }
+
+        # Add summary analysis
+        summary_info = {
+            "type": "summary",
+            "dialog": 0,
+            "vendor": "openai",
+            "body": f"In this conversation, {safe_agent_name} from {safe_business_name} discusses {safe_problem} with {safe_customer_name}. The agent provides assistance and information about {safe_business}.",
+            "encoding": "none"
+        }
+
+        # Add diarized analysis
+        diarized_info = {
+            "type": "diarized",
+            "dialog": 0,
+            "vendor": "openai",
+            "body": transcript_text.strip(),
+            "encoding": "none"
+        }
+
+        # Add all analyses
+        vcon.add_analysis(**transcript_info)
+        vcon.add_analysis(**summary_info)
+        vcon.add_analysis(**diarized_info)
+
+        # Add attachments
+        vcon.add_attachment(
+            type="bria_call_ended",
+            body={
+                "email": agent_email,
+                "extension": "2212",
+                "isDealerManuallySet": False,
+                "dealerId": 1100,
+                "dealerName": safe_business_name,
+                "agentName": safe_agent_name,
+                "agentSelectedDisposition": "VM Left",
+                "customerNumber": customer_phone,
+                "direction": "out",
+                "duration": audio_duration if generate_audio else 0,
+                "state": "ANSWERED",
+                "received_at": datetime.now().isoformat()
+            },
+            encoding="none"
+        )
 
     # Validate the entire vCon object
     is_valid, errors = vcon.is_valid()
@@ -279,7 +336,8 @@ def process_conversation(
     emotion,
     generation_prompt,
     progress_bar,
-    generate_audio=False
+    generate_audio=False,
+    conversation_type="voice"
 ):
     """Process a single conversation and return its details.
     
@@ -291,6 +349,7 @@ def process_conversation(
         generation_prompt (str): The base prompt template for conversation generation
         progress_bar: Streamlit progress bar object
         generate_audio (bool): Whether to generate audio files. Defaults to False.
+        conversation_type (str): Type of conversation - "voice" or "messaging". Defaults to "voice".
     """
     try:
         # Generate random identities
@@ -324,7 +383,7 @@ def process_conversation(
         audio_duration = 0
         combined_file = None
 
-        if generate_audio:
+        if generate_audio and conversation_type == "voice":
             progress_bar.progress(0.4, text="Generating audio...")
             # Generate audio
             combined_file = f"{vcon_uuid}.mp3"
@@ -388,7 +447,8 @@ def process_conversation(
             emotion,
             generation_prompt,
             conversation,
-            generate_audio=generate_audio
+            generate_audio=generate_audio,
+            conversation_type=conversation_type
         )
 
         vcon_file = f"{vcon_uuid}.vcon.json"
@@ -479,6 +539,28 @@ like the following example:
 }
 """
 
+default_messaging_prompt = """
+Generate a fake messaging conversation between a customer and an agent.
+The customer should start the conversation with a problem or question,
+and the agent should introduce themselves and their company when they respond.
+The conversation should follow a natural messaging style - shorter messages,
+more direct questions and answers.
+As part of the conversation, have the agent gather necessary information
+to resolve the customer's issue.
+The conversation should be at least 8 messages long and be complete.
+At the end, the agent should confirm the issue is resolved and offer
+additional assistance if needed. Return the conversation formatted
+like the following example:
+
+{'conversation': 
+    [
+    {'speaker': 'Customer', 'message': 'xxxxx'}, 
+    {'speaker': 'Agent', 'message': "xxxxx."}, 
+    {'speaker': 'Customer', 'message': "xxxxxx"}
+    ] 
+}
+"""
+
 # Set a slider to control the number of conversations to generate
 # Generate the conversation based on the prompt trigger
 st.title("Fake Conversation Generator")
@@ -498,8 +580,19 @@ col1.markdown(
             it is uploaded into S3."
 )
 
+# Add conversation type selection
+conversation_type = col2.radio(
+    "Conversation Type",
+    ["voice", "messaging"],
+    format_func=lambda x: "Voice Call" if x == "voice" else "Text Messaging"
+)
+
 add_emotion = col2.checkbox("Add emotion to conversation.")
-generate_audio = col2.checkbox("Generate audio files", value=False)
+generate_audio = col2.checkbox("Generate audio files", value=False, disabled=(conversation_type == "messaging"))
+if conversation_type == "messaging" and generate_audio:
+    generate_audio = False
+    st.warning("Audio generation is not available for messaging conversations.")
+
 num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
 generate = col2.button("Generate Conversation(s)")
 st.toast(
@@ -512,10 +605,11 @@ with st.sidebar:
     
     ## Instructions
 
-    1. Use the slider to select the number of conversations to generate.
-    2. Click the "Generate Conversation(s)" button to generate the conversations.
-    3. The conversations will be generated and displayed below.
-    4. Each conversation will include a link to download the vCon file.
+    1. Select the conversation type (Voice Call or Text Messaging).
+    2. Use the slider to select the number of conversations to generate.
+    3. Click the "Generate Conversation(s)" button to generate the conversations.
+    4. The conversations will be generated and displayed below.
+    5. Each conversation will include a link to download the vCon file.
 
     ## Conversation Prompt
 
@@ -527,8 +621,11 @@ with st.sidebar:
 
     """
     st.markdown(instructions)
+    
+    # Show different default prompts based on conversation type
+    current_default_prompt = default_messaging_prompt if conversation_type == "messaging" else default_conversation_prompt
     conversation_prompt = st.text_area(
-        "Conversation Prompt (Editable)", default_conversation_prompt, height=400
+        "Conversation Prompt (Editable)", current_default_prompt, height=400
     )
 
 if generate:
@@ -567,7 +664,8 @@ if generate:
                 current_emotion,
                 current_prompt,
                 this_bar,
-                generate_audio=generate_audio
+                generate_audio=generate_audio,
+                conversation_type=conversation_type
             )
             completed_conversations.append(conversation_details)
         except Exception as e:
