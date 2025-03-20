@@ -6,13 +6,11 @@ import logging
 import os
 import random
 import uuid
-import warnings
 from datetime import datetime, timedelta
 
 # Third-party imports
 import boto3
 import streamlit as st
-from dotenv import load_dotenv
 from openai import OpenAI
 from pydub import AudioSegment
 from vcon import Vcon
@@ -38,12 +36,6 @@ handler.setFormatter(
 )
 logger.addHandler(handler)
 
-# Configure warnings
-warnings.filterwarnings(action="ignore", category=DeprecationWarning)
-
-# Load environment variables
-load_dotenv()
-
 # Get environment variables from secrets.toml
 AWS_ACCESS_KEY = st.secrets["AWS_ACCESS_KEY"]
 AWS_SECRET_KEY = st.secrets["AWS_SECRET_KEY"]
@@ -52,23 +44,26 @@ OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 OPENAI_MODEL = st.secrets["OPENAI_MODEL"]
 OPENAI_TTS_MODEL = st.secrets["OPENAI_TTS_MODEL"]
 
-# Initialize OpenAI client
+# Initialize clients
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Initialize S3 client
 s3_client = boto3.client(
     "s3", aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY
 )
 
 
 def get_available_openai_models():
-    """Fetch available OpenAI models or return default list if API call fails."""
+    """
+    Fetch available OpenAI models or return default list if API call fails.
+    
+    Returns:
+        tuple: Two lists containing chat models and TTS models
+    """
     try:
         # Attempt to get models from the OpenAI API
         models = client.models.list()
         model_ids = [model.id for model in models.data]
         
-        # Separate models into categories without filtering
+        # Separate models into categories
         chat_models = model_ids.copy()
         tts_models = [m for m in model_ids if "tts" in m.lower()]
         
@@ -87,7 +82,12 @@ def get_available_openai_models():
 
 
 def ensure_s3_bucket_exists(bucket_name):
-    """Ensure the S3 bucket exists, create if it doesn't."""
+    """
+    Ensure the S3 bucket exists, create if it doesn't.
+    
+    Args:
+        bucket_name (str): Name of the S3 bucket
+    """
     try:
         s3_client.create_bucket(Bucket=bucket_name)
         logger.info(f"Created new S3 bucket: {bucket_name}")
@@ -96,7 +96,17 @@ def ensure_s3_bucket_exists(bucket_name):
 
 
 def upload_to_s3(file_path, bucket, s3_path):
-    """Upload a file to S3 and return its URL."""
+    """
+    Upload a file to S3 and return its URL.
+    
+    Args:
+        file_path (str): Local path to the file
+        bucket (str): S3 bucket name
+        s3_path (str): Path within the S3 bucket
+        
+    Returns:
+        str: Presigned URL for the uploaded file
+    """
     s3_client.upload_file(file_path, bucket, s3_path)
     return s3_client.generate_presigned_url(
         "get_object", Params={"Bucket": bucket, "Key": s3_path}
@@ -104,7 +114,15 @@ def upload_to_s3(file_path, bucket, s3_path):
 
 
 def get_s3_path(filename):
-    """Generate S3 path based on current date."""
+    """
+    Generate S3 path based on current date.
+    
+    Args:
+        filename (str): Filename to include in the path
+        
+    Returns:
+        str: S3 path with year/month/day/filename structure
+    """
     year, month, day = datetime.now().isoformat().split("T")[0].split("-")
     return f"{year}/{month}/{day}/{filename}"
 
@@ -129,7 +147,8 @@ def create_vcon_object(
     generate_audio=False,
     conversation_type="voice"
 ):
-    """Create and return a vCon object with all components.
+    """
+    Create and return a vCon object with all components.
     
     Args:
         agent_name (str): Name of the agent
@@ -138,28 +157,26 @@ def create_vcon_object(
         customer_phone (str): Phone number of the customer
         agent_email (str): Email of the agent
         customer_email (str): Email of the customer
-        url (str): URL of the conversation
-        filename (str): Filename of the conversation
-        signature (str): Signature of the conversation
+        url (str): URL of the conversation audio
+        filename (str): Filename of the conversation audio
+        signature (str): Signature of the conversation audio
         audio_duration (float): Duration of the conversation in seconds
         business_name (str): Name of the business
         business (str): Type of business
         problem (str): The problem/situation being discussed
         emotion (str): Customer's emotional state
-        generation_prompt (str): The base prompt template for conversation generation
+        generation_prompt (str): The base prompt template used for conversation generation
         conversation (list): List of conversation turns with speaker and message
-        generate_audio (bool): Whether to generate audio files. Defaults to False.
-        conversation_type (str): Type of conversation - "voice" or "messaging". Defaults to "voice".
+        generate_audio (bool): Whether audio files were generated
+        conversation_type (str): Type of conversation - "voice" or "messaging"
 
     Returns:
         Vcon: The created vCon object
     """
-
     # Ensure all strings are properly escaped for JSON
     def sanitize_for_json(text):
         if not isinstance(text, str):
             return text
-        # Replace any problematic characters
         return text.replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
 
     # Create sanitized copies of all string inputs
@@ -169,14 +186,13 @@ def create_vcon_object(
     safe_business = sanitize_for_json(business)
     safe_problem = sanitize_for_json(problem)
     safe_emotion = sanitize_for_json(emotion) if emotion else None
-    safe_prompt = sanitize_for_json(generation_prompt)
 
     # Create vCon object
     vcon = Vcon.build_new()
 
     # Different approaches based on conversation type
     if conversation_type == "messaging":
-        # For messaging, we'll create a simplified structure
+        # For messaging, create a simplified structure
         agent_party = Party(
             id=agent_email,
             name=safe_agent_name,
@@ -213,7 +229,7 @@ def create_vcon_object(
             if i > 0:
                 base_time += timedelta(minutes=random.randint(2, 5), seconds=random.randint(0, 59))
             
-            # Create Dialog object instead of dictionary
+            # Create Dialog object
             dialog_entry = Dialog(
                 type="text",
                 start=base_time.isoformat() + "+00:00",
@@ -354,6 +370,49 @@ def create_vcon_object(
     return vcon
 
 
+def generate_conversation(
+    prompt, agent_name, customer_name, business, problem, emotion, business_name, model=OPENAI_MODEL
+):
+    """
+    Generate a conversation between an agent and customer using OpenAI.
+
+    Args:
+        prompt (str): The base prompt template for conversation generation
+        agent_name (str): Name of the agent
+        customer_name (str): Name of the customer
+        business (str): Type of business
+        problem (str): The problem/situation being discussed
+        emotion (str): Customer's emotional state
+        business_name (str): Name of the business
+        model (str): OpenAI model to use for generation
+
+    Returns:
+        list: List of conversation turns with speaker and message
+    """
+    logger.info(
+        f"Generating conversation for {agent_name} and {customer_name} "
+        f"about {business_name} ({business}) using model {model}"
+    )
+    
+    completion = client.chat.completions.create(
+        model=model,
+        response_format={"type": "json_object"},
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant designed to output JSON.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    
+    result = json.loads(completion.choices[0].message.content)
+    logger.info(
+        f"Generated conversation with {len(result.get('conversation', []))} turns"
+    )
+    return result.get("conversation", [])
+
+
 def process_conversation(
     business,
     business_name,
@@ -364,7 +423,8 @@ def process_conversation(
     generate_audio=False,
     conversation_type="voice"
 ):
-    """Process a single conversation and return its details.
+    """
+    Process a single conversation and return its details.
     
     Args:
         business (str): Type of business
@@ -373,8 +433,15 @@ def process_conversation(
         emotion (str): Customer's emotional state
         generation_prompt (str): The base prompt template for conversation generation
         progress_bar: Streamlit progress bar object
-        generate_audio (bool): Whether to generate audio files. Defaults to False.
-        conversation_type (str): Type of conversation - "voice" or "messaging". Defaults to "voice".
+        generate_audio (bool): Whether to generate audio files
+        conversation_type (str): Type of conversation - "voice" or "messaging"
+        
+    Returns:
+        dict: Conversation details including vCon UUID, URL, creation time, and summary
+        
+    Raises:
+        ValueError: If conversation generation fails
+        Exception: For other processing errors
     """
     try:
         # Generate random identities
@@ -386,7 +453,7 @@ def process_conversation(
             f"{agent_name.replace(' ', '.').lower()}"
             f"@{business.replace(' ', '').lower()}.com"
         )
-        customer_email = f"{customer_name.replace(' ', '.').lower()}" "@gmail.com"
+        customer_email = f"{customer_name.replace(' ', '.').lower()}@gmail.com"
 
         # Generate conversation
         conversation = generate_conversation(
@@ -505,52 +572,13 @@ def process_conversation(
         raise
 
 
-def generate_conversation(
-    prompt, agent_name, customer_name, business, problem, emotion, business_name, model=OPENAI_MODEL
-):
-    """Generate a conversation between an agent and customer using OpenAI.
-
-    Args:
-        prompt (str): The base prompt template for conversation generation
-        agent_name (str): Name of the agent
-        customer_name (str): Name of the customer
-        business (str): Type of business
-        problem (str): The problem/situation being discussed
-        emotion (str): Customer's emotional state
-        business_name (str): Name of the business
-        model (str): OpenAI model to use for generation
-
-    Returns:
-        list: List of conversation turns with speaker and message
-    """
-    logger.info(
-        f"Generating conversation for {agent_name} and {customer_name} "
-        f"about {business_name} ({business}) using model {model}"
-    )
-    completion = client.chat.completions.create(
-        model=model,
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant designed to output JSON.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-    )
-    result = json.loads(completion.choices[0].message.content)
-    logger.info(
-        f"Generated conversation with {len(result.get('conversation', []))} turns"
-    )
-    return result.get("conversation", [])
-
-
+# Default prompt templates
 default_conversation_prompt = """
 Generate a fake conversation between a customer and an agent.
 The agent should introduce themselves, their company and give the customer
 their name. The agent should ask for the customer's name.
 As part of the conversation, have the agent ask for two pieces of
-personal information.  Spell out numbers. For example, 1000 should be
+personal information. Spell out numbers. For example, 1000 should be
 said as one zero zero zero, not one thousand. The conversation should be
 at least 10 lines long and be complete. At the end
 of the conversation, the agent should thank the customer for their time
@@ -588,158 +616,163 @@ like the following example:
 }
 """
 
-# Set a slider to control the number of conversations to generate
-# Generate the conversation based on the prompt trigger
-st.title("Fake Conversation Generator")
+# Main Streamlit app
+def main():
+    """Main Streamlit application function."""
+    st.title("Fake Conversation Generator")
 
-col1, col2 = st.columns(2)
-with col1:
-    # select business from a dropdown
-    business = col1.selectbox("Select Business", businesses)
-    problem = col1.selectbox("Select Problem", problems)
-    business_name = col1.text_input("Business Name", "a random business")
-with col2:
-    # Get available models
-    chat_models, tts_models = get_available_openai_models()
-    
-    # Attempt to set default selected model to the one from secrets
-    default_chat_model_index = 0
-    if OPENAI_MODEL in chat_models:
-        default_chat_model_index = chat_models.index(OPENAI_MODEL)
-    
-    default_tts_model_index = 0
-    if OPENAI_TTS_MODEL in tts_models:
-        default_tts_model_index = tts_models.index(OPENAI_TTS_MODEL)
-    
-    # Add model selection dropdowns
-    selected_model = col2.selectbox(
-        "Select Chat Model", 
-        chat_models, 
-        index=default_chat_model_index
-    )
-    
-    # Add conversation type selection
-    conversation_type = col2.radio(
-        "Conversation Type",
-        ["voice", "messaging"],
-        format_func=lambda x: "Voice Call" if x == "voice" else "Text Messaging"
-    )
-    
-    if conversation_type == "voice":
-        generate_audio = col2.checkbox("Generate audio files", value=False)
-        if generate_audio:
-            selected_tts_model = col2.selectbox(
-                "Select TTS Model", 
-                tts_models, 
-                index=default_tts_model_index
-            )
+    col1, col2 = st.columns(2)
+    with col1:
+        # Business information selection
+        business = col1.selectbox("Select Business", businesses)
+        problem = col1.selectbox("Select Problem", problems)
+        business_name = col1.text_input("Business Name", "a random business")
+        
+    with col2:
+        # Get available models
+        chat_models, tts_models = get_available_openai_models()
+        
+        # Attempt to set default selected model to the one from secrets
+        default_chat_model_index = 0
+        if OPENAI_MODEL in chat_models:
+            default_chat_model_index = chat_models.index(OPENAI_MODEL)
+        
+        default_tts_model_index = 0
+        if OPENAI_TTS_MODEL in tts_models:
+            default_tts_model_index = tts_models.index(OPENAI_TTS_MODEL)
+        
+        # Add model selection dropdowns
+        selected_model = col2.selectbox(
+            "Select Chat Model", 
+            chat_models, 
+            index=default_chat_model_index
+        )
+        
+        # Add conversation type selection
+        conversation_type = col2.radio(
+            "Conversation Type",
+            ["voice", "messaging"],
+            format_func=lambda x: "Voice Call" if x == "voice" else "Text Messaging"
+        )
+        
+        if conversation_type == "voice":
+            generate_audio = col2.checkbox("Generate audio files", value=False)
+            if generate_audio:
+                selected_tts_model = col2.selectbox(
+                    "Select TTS Model", 
+                    tts_models, 
+                    index=default_tts_model_index
+                )
+            else:
+                selected_tts_model = OPENAI_TTS_MODEL
         else:
+            generate_audio = False
             selected_tts_model = OPENAI_TTS_MODEL
-    else:
-        generate_audio = False
-        selected_tts_model = OPENAI_TTS_MODEL
 
-    add_emotion = col2.checkbox("Add emotion to conversation.")
-    if conversation_type == "messaging" and generate_audio:
-        generate_audio = False
-        st.warning("Audio generation is not available for messaging conversations.")
+        add_emotion = col2.checkbox("Add emotion to conversation")
+        if conversation_type == "messaging" and generate_audio:
+            generate_audio = False
+            st.warning("Audio generation is not available for messaging conversations.")
 
-    num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
-    generate = col2.button("Generate Conversation(s)")
-    st.toast(
-        f"Using model: {selected_model}, TTS model: {selected_tts_model} and S3 bucket: {S3_BUCKET}"
-    )
-
-# Display the instructions in the sidebar
-with st.sidebar:
-    instructions = f"""    
-    ## Overview
-    This app generates fake conversations between a customer and 
-    an agent. The conversation is generated based on a prompt and 
-    includes the names of the agent and customer, the business, 
-    the problem, and the emotion of the customer.  The conversation 
-    is then synthesized into an audio file, a vCon is created then 
-    it is uploaded into S3.
-
-    ## Instructions
-
-    1. Select the conversation type (Voice Call or Text Messaging).
-    2. Use the slider to select the number of conversations to generate.
-    3. Click the "Generate Conversation(s)" button to generate the conversations.
-    4. The conversations will be generated and displayed below.
-    5. Each conversation will include a link to download the vCon file.
-
-    ## Conversation Prompt
-
-    The conversation prompt is passed to the LLM to generate the conversation.  
-    The conversation will be generated based on the prompt and the names of the agent and customer, 
-    the business, the problem, and the emotion of the customer (all picked at random).
-
-    This prompt can be edited to generate different conversations.
-
-    """
-    st.markdown(instructions)
-    
-    # Show different default prompts based on conversation type
-    current_default_prompt = default_messaging_prompt if conversation_type == "messaging" else default_conversation_prompt
-    conversation_prompt = st.text_area(
-        "Conversation Prompt (Editable)", current_default_prompt, height=400
-    )
-
-if generate:
-    completed_conversations = []
-    progress_text = "Generating fake conversations. Please wait."
-    total_bar = st.progress(0, text=progress_text)
-
-    for i in range(num_conversations):
-        logger.info(f"Generating conversation {i+1} of {num_conversations}")
-        this_bar = st.progress(0, text="Processing conversation...")
-
-        # Select random business and problem if needed
-        current_business = (
-            random.choice(businesses)
-            if business == "Pick Random Business Type"
-            else business
-        )
-        current_problem = (
-            random.choice(problems) if problem == "random situation" else problem
-        )
-        current_emotion = random.choice(emotions) if add_emotion else None
-
-        # Build generation prompt
-        current_prompt = (
-            f"{conversation_prompt}\n\n"
-            f"The conversation is about {business_name} "
-            f"(a {current_business}) and is about {current_problem}. "
-            f"{'The customer is feeling ' + current_emotion + '.' if current_emotion else ''}"
+        num_conversations = col2.number_input("Number of Conversations to Generate", 1, 100, 1)
+        generate = col2.button("Generate Conversation(s)")
+        
+        # Display model information as toast message
+        st.toast(
+            f"Using model: {selected_model}, TTS model: {selected_tts_model} and S3 bucket: {S3_BUCKET}"
         )
 
-        try:
-            conversation_details = process_conversation(
-                current_business,
-                business_name,
-                current_problem,
-                current_emotion,
-                current_prompt,
-                this_bar,
-                generate_audio=generate_audio,
-                conversation_type=conversation_type
+    # Display the instructions in the sidebar
+    with st.sidebar:
+        instructions = f"""    
+        ## Overview
+        This app generates fake conversations between a customer and 
+        an agent. The conversation is generated based on a prompt and 
+        includes the names of the agent and customer, the business, 
+        the problem, and optionally the emotion of the customer.
+        
+        For voice conversations, audio can be synthesized and a vCon (voice conversation)
+        file is created and uploaded to S3.
+
+        ## Instructions
+
+        1. Select the conversation type (Voice Call or Text Messaging).
+        2. Choose the number of conversations to generate.
+        3. Click the "Generate Conversation(s)" button.
+        4. The conversations will be displayed below.
+        5. Each conversation will include a link to download the vCon file.
+
+        ## Conversation Prompt
+
+        The conversation prompt is passed to the LLM to generate the conversation.  
+        You can edit this prompt to generate different types of conversations.
+        """
+        st.markdown(instructions)
+        
+        # Show different default prompts based on conversation type
+        current_default_prompt = default_messaging_prompt if conversation_type == "messaging" else default_conversation_prompt
+        conversation_prompt = st.text_area(
+            "Conversation Prompt (Editable)", current_default_prompt, height=400
+        )
+
+    if generate:
+        completed_conversations = []
+        progress_text = "Generating fake conversations. Please wait."
+        total_bar = st.progress(0, text=progress_text)
+
+        for i in range(num_conversations):
+            logger.info(f"Generating conversation {i+1} of {num_conversations}")
+            this_bar = st.progress(0, text="Processing conversation...")
+
+            # Select random business and problem if needed
+            current_business = (
+                random.choice(businesses)
+                if business == "Pick Random Business Type"
+                else business
             )
-            completed_conversations.append(conversation_details)
-        except Exception as e:
-            logger.error(f"Error processing conversation: {str(e)}")
-            st.error(f"Failed to generate conversation {i+1}: {str(e)}")
+            current_problem = (
+                random.choice(problems) if problem == "random situation" else problem
+            )
+            current_emotion = random.choice(emotions) if add_emotion else None
 
-        total_bar.progress((i + 1) / num_conversations)
-        this_bar.empty()
+            # Build generation prompt
+            current_prompt = (
+                f"{conversation_prompt}\n\n"
+                f"The conversation is about {business_name} "
+                f"(a {current_business}) and is about {current_problem}. "
+                f"{'The customer is feeling ' + current_emotion + '.' if current_emotion else ''}"
+            )
 
-    total_bar.empty()
+            try:
+                conversation_details = process_conversation(
+                    current_business,
+                    business_name,
+                    current_problem,
+                    current_emotion,
+                    current_prompt,
+                    this_bar,
+                    generate_audio=generate_audio,
+                    conversation_type=conversation_type
+                )
+                completed_conversations.append(conversation_details)
+            except Exception as e:
+                logger.error(f"Error processing conversation: {str(e)}")
+                st.error(f"Failed to generate conversation {i+1}: {str(e)}")
 
-    # Display results
-    st.markdown("## Completed Conversations")
-    for conv in completed_conversations:
-        st.markdown(f"**Created at:** {conv['creation_time']}")
-        st.markdown(conv["summary"])
-        st.markdown(f"**vCon URL:** [Download vCon]({conv['vcon_url']})")
-        st.markdown("---")
+            total_bar.progress((i + 1) / num_conversations)
+            this_bar.empty()
+
+        total_bar.empty()
+
+        # Display results
+        st.markdown("## Completed Conversations")
+        for conv in completed_conversations:
+            st.markdown(f"**Created at:** {conv['creation_time']}")
+            st.markdown(conv["summary"])
+            st.markdown(f"**vCon URL:** [Download vCon]({conv['vcon_url']})")
+            st.markdown("---")
+
+
+if __name__ == "__main__":
+    main()
 

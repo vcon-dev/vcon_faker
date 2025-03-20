@@ -17,7 +17,7 @@ This code is available on GitHub: https://github.com/vcon-dev/vcon_faker
 
 Before running the script, ensure you have the following:
 
-- Python 3.x installed
+- Python 3.12 installed
 - Required Python packages listed in the `requirements.txt` file
 - OpenAI API key
 - Amazon Web Services (AWS) access key and secret key
