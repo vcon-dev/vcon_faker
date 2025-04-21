@@ -34,6 +34,7 @@ businesses = [
     'Coffee Shop', 
     'Comedy Club', 
     'Construction Company', 
+    'Community Support Center',
     'Convenience Store', 
     'Dance Studio', 
     'Daycare Center', 
@@ -114,21 +115,85 @@ businesses = [
 
 # Example list of problems
 problems = [
-    'billing', 
-    'customer service', 
+    'account access issues',
+    'appointment scheduling',
+    'billing',
+    'complaint resolution',
+    'customer service',
     'data management',
+    'delivery tracking',
+    'discount application',
+    'equipment malfunction',
+    'gift card issues',
     'inventory',
-    'pricing', 
-    'privacy', 
-    'product quality', 
+    'loyalty program questions',
+    'membership cancellation',
+    'order modification',
+    'payment processing',
+    'pricing',
+    'privacy',
+    'product availability',
+    'product quality',
     'random situation',
+    'refund request',
     'request for personal information',
-    'returns', 
-    'security', 
-    'shipping', 
-    'typical situation'
+    'returns',
+    'security',
+    'service upgrade',
+    'shipping',
+    'subscription management',
+    'technical support',
+    'typical situation',
+    'warranty claim',
+    'website navigation help',
+    'wrong item received'
 ]
 
 # Example list of emotions
-emotions = ['happy', 'sad', 'angry', 'frustrated', 'confused', 'excited', 'nervous', 'relieved', 'surprised', 'disappointed', 'relaxed', 'anxious']
+emotions = [
+    # Positive emotions
+    'appreciative',
+    'confident',
+    'content',
+    'delighted',
+    'eager',
+    'enthusiastic',
+    'excited',
+    'grateful',
+    'happy',
+    'hopeful',
+    'impressed',
+    'optimistic',
+    'pleased',
+    'relieved',
+    'satisfied',
+    'trusting',
+    
+    # Negative emotions
+    'angry',
+    'annoyed',
+    'anxious',
+    'betrayed',
+    'confused',
+    'disappointed',
+    'disgusted',
+    'frustrated',
+    'impatient',
+    'irritated',
+    'outraged',
+    'sad',
+    'skeptical',
+    'suspicious',
+    'unhappy',
+    'worried',
+    
+    # Neutral/Complex emotions
+    'ambivalent',
+    'curious',
+    'indifferent',
+    'nervous',
+    'surprised',
+    'uncertain',
+    'unsure'
+]
 
