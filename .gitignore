@@ -1,7 +1,19 @@
+# Secrets / local config (keep the committed *.example templates)
 .env
-venv
-*.json
+.streamlit/secrets.toml
+
+# Virtual environments
+.venv/
+venv/
+
+# Generated artifacts
+*.vcon.json
 *.mp3
 *.wav
+
+# Python caches
 *.pyc
-.streamlit
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

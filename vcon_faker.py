@@ -1,5 +1,3 @@
-import base64
-import hashlib
 import json
 import logging
 import os
@@ -12,10 +10,9 @@ import boto3
 import streamlit as st
 from openai import OpenAI
 from pydub import AudioSegment
-from vcon import Vcon
-from vcon.party import Party
-from vcon.dialog import Dialog
 import pytz
+
+from vcon_builder import build_vcon, sha512_base64url
 
 # Local imports
 from fake_names import (
@@ -163,267 +160,8 @@ def get_s3_path(filename, conversation_date=None):
     return f"{year}/{month}/{day}/{filename}"
 
 
-def create_vcon_object(
-    agent_name,
-    customer_name,
-    agent_phone,
-    customer_phone,
-    agent_email,
-    customer_email,
-    url,
-    filename,
-    signature,
-    audio_duration,
-    business_name,
-    business,
-    problem,
-    emotion,
-    generation_prompt,
-    conversation,
-    generate_audio=False,
-    conversation_type="voice",
-    conversation_date=None,
-    timezone="US/Eastern",
-    business_hours=None
-):
-    """
-    Create and return a vCon object with all components.
-    
-    Args:
-        agent_name (str): Name of the agent
-        customer_name (str): Name of the customer
-        agent_phone (str): Phone number of the agent
-        customer_phone (str): Phone number of the customer
-        agent_email (str): Email of the agent
-        customer_email (str): Email of the customer
-        url (str): URL of the conversation audio
-        filename (str): Filename of the conversation audio
-        signature (str): Signature of the conversation audio
-        audio_duration (float): Duration of the conversation in seconds
-        business_name (str): Name of the business
-        business (str): Type of business
-        problem (str): The problem/situation being discussed
-        emotion (str): Customer's emotional state
-        generation_prompt (str): The base prompt template used for conversation generation
-        conversation (list): List of conversation turns with speaker and message
-        generate_audio (bool): Whether audio files were generated
-        conversation_type (str): Type of conversation - "voice" or "messaging"
-        conversation_date (datetime, optional): Date and time of the conversation
-        timezone (str): Timezone for the conversation
-        business_hours (dict, optional): Start and end hours for business
-
-    Returns:
-        Vcon: The created vCon object
-    """
-    # Set default business hours if not provided
-    if business_hours is None:
-        business_hours = {"start": 9, "end": 17}  # 9 AM to 5 PM
-        
-    # Set conversation date if not provided
-    if conversation_date is None:
-        conversation_date = datetime.now()
-    
-    # Ensure conversation_date is timezone-aware
-    tz = pytz.timezone(timezone)
-    if conversation_date.tzinfo is None:
-        conversation_date = tz.localize(conversation_date)
-    
-    # Track the last dialog timestamp for setting created_at later
-    last_dialog_time = conversation_date
-    
-    # Ensure all strings are properly escaped for JSON
-    def sanitize_for_json(text):
-        if not isinstance(text, str):
-            return text
-        return text.replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
-
-    # Create sanitized copies of all string inputs
-    safe_agent_name = sanitize_for_json(agent_name)
-    safe_customer_name = sanitize_for_json(customer_name)
-    safe_business_name = sanitize_for_json(business_name)
-    safe_business = sanitize_for_json(business)
-    safe_problem = sanitize_for_json(problem)
-    safe_emotion = sanitize_for_json(emotion) if emotion else None
-
-    # Create vCon object
-    vcon = Vcon.build_new()
-    
-    try:   
-        # Rewrite the vcon object to include the created_at field
-        vcon_dict = vcon.to_dict()
-        vcon_dict['created_at'] = last_dialog_time.isoformat()
-        vcon = Vcon(vcon_dict)
-    except Exception as e:
-        logger.error(f"Error rewriting vcon object: {e}")
-        raise
-
-    # Different approaches based on conversation type
-    if conversation_type == "messaging":
-        # For messaging, create a simplified structure
-        agent_party = Party(
-            id=agent_email,
-            name=safe_agent_name,
-            tel="",
-            mailto=agent_email,
-            role="agent"
-        )
-
-        customer_party = Party(
-            id=customer_phone,
-            name=customer_phone,
-            tel=customer_phone,
-            mailto=customer_email,
-            role="contact"
-        )
-
-        # Add parties
-        vcon.add_party(agent_party)     # Agent first (index 0)
-        vcon.add_party(customer_party)  # Customer second (index 1)
-        
-        # Generate message timestamps
-        base_time = conversation_date
-        
-        # Add dialog entries for each message
-        for i, turn in enumerate(conversation):
-            if not isinstance(turn, dict) or "message" not in turn:
-                continue
-                
-            # Determine the party index based on speaker
-            party_index = 1 if turn["speaker"] == "Customer" else 0
-            
-            # Add time between messages (2-5 minutes)
-            if i > 0:
-                base_time += timedelta(minutes=random.randint(2, 5), seconds=random.randint(0, 59))
-            
-            # Create Dialog object
-            dialog_entry = Dialog(
-                type="text",
-                start=base_time.isoformat(),
-                parties=[party_index],
-                originator=party_index,
-                mimetype="text/plain",
-                body=turn["message"]
-            )
-            
-            vcon.add_dialog(dialog_entry)
-            last_dialog_time = base_time  # Update the last dialog time
-        
-    else:
-        # Traditional voice conversation approach
-        # Create customer ID
-        customer_id = f"{customer_phone}_{customer_email}_1100"
-
-        # Create parties with IDs
-        agent_party = Party(
-            id=agent_email,
-            name=safe_agent_name,
-            tel=agent_phone,
-            mailto=agent_email,
-            role="agent",
-            meta={
-                "role": "agent",
-                "extension": "2212",
-                "cxm_user_id": "891"
-            }
-        )
-
-        customer_party = Party(
-            id=customer_id,
-            name=safe_customer_name,
-            tel=customer_phone,
-            mailto=customer_email,
-            role="customer",
-            meta={
-                "role": "customer"
-            }
-        )
-
-        # Add parties
-        vcon.add_party(customer_party)  # Add customer first (index 0)
-        vcon.add_party(agent_party)     # Add agent second (index 1)
-
-        # Create dialog with updated metadata
-        dialog_info = Dialog(
-            type="recording" if generate_audio else "text",
-            start=conversation_date.isoformat(),
-            parties=[1, 0],  # Agent is 1, Customer is 0
-            url=url if generate_audio else None,
-            filename=filename if generate_audio else None,
-            mimetype="audio/x-wav" if generate_audio else "text/plain",
-            alg="SHA-512" if generate_audio else None,
-            signature=signature if generate_audio else None,
-            duration=audio_duration if generate_audio else None,
-            meta={
-                "disposition": "ANSWERED",
-                "direction": "out",
-                "agent_selected_disposition": "VM Left",
-                "is_dealer_manually_set": False,
-                "engaged": False
-            }
-        )
-        
-        # Add dialog
-        vcon.add_dialog(dialog_info)
-        last_dialog_time = conversation_date  # For voice, use the conversation start time
-
-        # Build transcript from conversation
-        transcript_text = ""
-        for turn in conversation:
-            if isinstance(turn, dict):
-                message = sanitize_for_json(turn.get("message", ""))
-                transcript_text += message + "\n\n"
-
-        # Add transcript analysis
-        transcript_info = {
-            "type": "transcript",
-            "dialog": 0,
-            "vendor": "deepgram" if generate_audio else "text",
-            "body": {
-                "transcript": transcript_text.strip(),
-                "confidence": 0.99,
-                "detected_language": "en"
-            },
-            "encoding": "none"
-        }
-
-        # Add summary analysis
-        summary_info = {
-            "type": "summary",
-            "dialog": 0,
-            "vendor": "openai",
-            "body": f"In this conversation, {safe_agent_name} from {safe_business_name} discusses {safe_problem} with {safe_customer_name}. The agent provides assistance and information about {safe_business}.",
-            "encoding": "none"
-        }
-
-        # Add diarized analysis
-        diarized_info = {
-            "type": "diarized",
-            "dialog": 0,
-            "vendor": "openai",
-            "body": transcript_text.strip(),
-            "encoding": "none"
-        }
-
-        # Add all analyses
-        vcon.add_analysis(**transcript_info)
-        vcon.add_analysis(**summary_info)
-        vcon.add_analysis(**diarized_info)
-
- 
-    # Set the vCon created_at to 15 seconds after the last dialog
-    vcon_created_time = last_dialog_time + timedelta(seconds=15)
-    
-    vcon_dict = vcon.to_dict()
-    vcon_dict['created_at'] = vcon_created_time.isoformat()
-    vcon = Vcon(vcon_dict)
-
-    # Validate the entire vCon object
-    is_valid, errors = vcon.is_valid()
-    if not is_valid:
-        logger.error(f"vCon validation failed: {errors}")
-        raise ValueError(f"Invalid vCon object: {errors}")
-
-    return vcon
+# NOTE: vCon assembly lives in vcon_builder.build_vcon() — a pure, spec-compliant
+# (IETF vcon-core-02, vcon 0.9.4) module that is unit-tested without Streamlit.
 
 
 def generate_conversation(
@@ -654,7 +392,7 @@ def process_conversation(
         
         vcon_uuid = str(uuid.uuid4())
         audio_url = None
-        audio_signature = None
+        audio_content_hash = None
         audio_duration = 0
         combined_file = None
 
@@ -690,12 +428,9 @@ def process_conversation(
             combined_audio.export(combined_file)
             audio_duration = len(combined_audio) / 1000
 
-            # Calculate audio signature
+            # Calculate spec-compliant content_hash (sha512-<base64url>).
             with open(combined_file, "rb") as f:
-                content = f.read()
-                audio_signature = base64.urlsafe_b64encode(
-                    hashlib.sha512(content).digest()
-                ).decode("utf-8")
+                audio_content_hash = sha512_base64url(f.read())
 
             # Upload to S3
             progress_bar.progress(0.6, text="Uploading files...")
@@ -706,29 +441,28 @@ def process_conversation(
             s3_audio_path = get_s3_path(combined_file, conversation_date)
             audio_url = upload_to_s3(combined_file, s3_bucket, s3_audio_path, s3_client)
 
-        # Create and save vCon
-        vcon_object = create_vcon_object(
-            agent_name,
-            customer_name,
-            agent_phone,
-            customer_phone,
-            agent_email,
-            customer_email,
-            audio_url,
-            combined_file,
-            audio_signature,
-            audio_duration,
-            business_name,
-            business,
-            problem,
-            emotion,
-            generation_prompt,
-            conversation,
-            generate_audio=generate_audio,
+        # Create the spec-compliant vCon (see vcon_builder.build_vcon).
+        vcon_object = build_vcon(
+            agent_name=agent_name,
+            customer_name=customer_name,
+            agent_phone=agent_phone,
+            customer_phone=customer_phone,
+            agent_email=agent_email,
+            customer_email=customer_email,
+            business_name=business_name,
+            business=business,
+            problem=problem,
+            emotion=emotion,
+            conversation=conversation,
             conversation_type=conversation_type,
             conversation_date=conversation_date,
-            timezone=timezone,
-            business_hours=business_hours
+            generate_audio=generate_audio,
+            audio_url=audio_url,
+            audio_filename=combined_file,
+            audio_content_hash=audio_content_hash,
+            audio_duration=audio_duration,
+            chat_model=OPENAI_MODEL,
+            tts_model=OPENAI_TTS_MODEL,
         )
 
         vcon_file = f"{vcon_uuid}.vcon.json"

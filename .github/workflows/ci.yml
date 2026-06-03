@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Tests exercise the pure builder, which needs only the vcon library.
+          pip install "vcon>=0.9.4,<0.10" pytest pytest-mock ruff mypy
+
+      - name: Lint (ruff)
+        # Scoped to the modernized modules; the legacy Streamlit app is cleaned
+        # up in a later phase.
+        run: ruff check vcon_builder.py tests
+
+      - name: Type check (mypy)
+        run: mypy vcon_builder.py
+
+      - name: vCon compliance + unit tests
+        run: pytest -q
