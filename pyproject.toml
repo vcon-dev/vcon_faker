@@ -69,6 +69,8 @@ typing-extensions = "4.10.0"
 tzdata = "2024.1"
 urllib3 = "^2.2.2"
 vcon = "0.9.4"
+fastapi = ">=0.115"
+uvicorn = ">=0.30"
 watchdog = "4"
 
 
