@@ -22,12 +22,12 @@ jobs:
           pip install "vcon>=0.9.4,<0.10" pytest pytest-mock ruff mypy
 
       - name: Lint (ruff)
-        # Scoped to the modernized modules; the legacy Streamlit app is cleaned
-        # up in a later phase.
-        run: ruff check vcon_builder.py tests
+        # Scoped to the engine package + modernized modules; the legacy Streamlit
+        # app is cleaned up in a later phase.
+        run: ruff check vconfaker vcon_builder.py tests
 
       - name: Type check (mypy)
-        run: mypy vcon_builder.py
+        run: mypy vconfaker vcon_builder.py
 
       - name: vCon compliance + unit tests
         run: pytest -q
