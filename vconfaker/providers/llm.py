@@ -136,8 +136,8 @@ class AnthropicProvider(LLMProvider):
         )
         for block in response.content:
             if block.type == "tool_use" and block.name == "emit_conversation":
-                response = ConversationResponse.model_validate(block.input)
-                turns = [{"speaker": t.speaker, "message": t.message} for t in response.conversation]
+                parsed = ConversationResponse.model_validate(block.input)
+                turns = [{"speaker": t.speaker, "message": t.message} for t in parsed.conversation]
                 logger.info(
                     "AnthropicProvider generated %d turns with model %s",
                     len(turns),
