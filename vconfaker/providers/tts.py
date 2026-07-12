@@ -66,7 +66,10 @@ class OpenAITTSProvider(TTSProvider):
         for turn in turns:
             voice = voices.get(turn["speaker"], "alloy")
             response = client.audio.speech.create(
-                model=self._model, voice=voice, input=turn["message"], response_format="mp3"
+                model=self._model,
+                voice=voice,  # type: ignore[arg-type]  # SDK Literal; values come from DEFAULT_VOICES
+                input=turn["message"],
+                response_format="mp3",
             )
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as handle:
                 tmp = handle.name

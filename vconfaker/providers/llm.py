@@ -99,7 +99,7 @@ class OpenAIProvider(LLMProvider):
         from openai import OpenAI  # lazy import; not needed for scripted/offline use
 
         client = OpenAI(api_key=self._api_key)
-        completion = client.chat.completions.create(
+        completion = client.chat.completions.create(  # type: ignore[call-overload]  # json_schema postdates SDK 1.14 stubs; serialized as-is at runtime
             model=self._model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
