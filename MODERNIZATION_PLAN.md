@@ -1,5 +1,17 @@
 # vcon_faker — Modernization Plan ("State of the Art")
 
+> **Status (2026-07-13).** Phases 0-1 are done. Round 2 landed on top of them:
+> library-first cleanup (`compute_content_hash`, UUID8 storage keys matching
+> the vCon `uuid`), four no-synthesis modes (`email`, `incomplete`, `transfer`,
+> transcript-only `voice` with WTF analysis), JWS signing (`--sign`), a
+> `conserver` storage backend, and a Streamlit UI with provider/storage/mode
+> selectors plus an inline JSON viewer, download, and audio player.
+> Deliberately NOT adopted: `Vcon.add_tag`, `add_lawful_basis_attachment`, and
+> `validate_extensions()` from vcon 0.9.6 — they emit/expect native list/dict
+> bodies where the spec requires JSON strings; the builder keeps hand-rolled
+> spec-correct attachments until the library is fixed (upstream fix filed as a
+> task against vcon-lib). Phases 2-4 below remain the long-range backlog.
+
 ## Context
 
 `vcon_faker` is a Streamlit app (one ~1,030-line `vcon_faker.py`) that generates

@@ -15,13 +15,23 @@ party). See [`CONSENT.md`](CONSENT.md). vCons conform to IETF
 
 ## Features
 
-- Generates conversations from editable prompts (voice or text messaging)
-- Structured LLM output (JSON schema / tool use) keeps agent and customer names consistent
+- Five conversation modes, four of which need **no audio synthesis at all**:
+  - `voice` - phone call; optional TTS audio, otherwise transcript-only with a
+    WTF transcription analysis
+  - `messaging` - SMS-style thread, one text dialog per message
+  - `email` - email exchange with hours-apart timestamps
+  - `incomplete` - a call attempt that never connected (`no-answer`, `busy`,
+    ...), generated fully offline with no LLM call
+  - `transfer` - three parties (customer, agent, supervisor) with a spec
+    `transfer` dialog at the handoff
+- Structured LLM output (JSON schema / tool use) keeps agent, customer, and
+  supervisor names consistent
 - LLM providers: **OpenAI**, **Anthropic Claude**, or offline **`scripted`**
 - Synthesizes per-turn audio via OpenAI text-to-speech (voice calls)
 - Optional **Whisper round-trip** on synthesized audio for real recognizer confidence
 - Builds spec-compliant vCons with WTF transcription analysis and synthetic-data governance
-- Writes output locally or to S3
+- Optional **JWS signing** (`--sign`) with a generated or configured RSA key pair
+- Writes output locally, to S3, or straight into a **vcon-server ingress**
 - Three front ends over one engine: Streamlit UI, CLI, and a FastAPI service
 - Concurrent batch generation via `--concurrency` / API `concurrency` field
 
@@ -56,8 +66,9 @@ Streamlit secrets (the UI). Recognized keys:
 OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TTS_MODEL, WHISPER_MODEL
 ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 AWS_ACCESS_KEY, AWS_SECRET_KEY, S3_BUCKET
+CONSERVER_URL, CONSERVER_API_TOKEN, CONSERVER_INGRESS
 VCONFAKER_LLM_PROVIDER, VCONFAKER_STORAGE, VCONFAKER_OUTPUT_DIR
-VCONFAKER_CONCURRENCY, VCONFAKER_WHISPER
+VCONFAKER_CONCURRENCY, VCONFAKER_WHISPER, VCONFAKER_SIGNING_KEY
 ```
 
 For the Streamlit UI, copy `.streamlit/secrets.toml.example` to
@@ -89,6 +100,18 @@ python -m vconfaker generate --provider anthropic --count 10
 
 # Whisper STT round-trip on synthesized audio (real recognizer confidence)
 python -m vconfaker generate --provider openai --audio --whisper --count 5
+
+# No-synthesis modes: email thread, missed call, transferred call
+python -m vconfaker generate --provider scripted --type email --count 3
+python -m vconfaker generate --provider scripted --type incomplete --disposition busy
+python -m vconfaker generate --provider anthropic --type transfer
+
+# JWS-sign each vCon (key from VCONFAKER_SIGNING_KEY, or generated in --out-dir)
+python -m vconfaker generate --provider scripted --type messaging --sign
+
+# POST straight into a vcon-server ingress (text modes; audio needs local/s3)
+CONSERVER_URL=http://localhost:8000 CONSERVER_INGRESS=faker \
+  python -m vconfaker generate --provider scripted --type messaging --storage conserver
 ```
 
 ### API
