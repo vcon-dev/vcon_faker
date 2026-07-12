@@ -23,9 +23,10 @@ class Settings:
     """Engine configuration. Construct via :meth:`from_env`."""
 
     llm_provider: str = "openai"          # openai | anthropic | scripted
-    storage_backend: str = "local"        # local | s3
+    storage_backend: str = "local"        # local | s3 | conserver
     output_dir: str = "./out"
     concurrency: int = 1
+    signing_key: str | None = None        # path to a PEM RSA private key
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
@@ -40,6 +41,10 @@ class Settings:
     aws_secret_key: str | None = None
     s3_bucket: str | None = None
 
+    conserver_url: str | None = None      # vcon-server base URL
+    conserver_api_token: str | None = None
+    conserver_ingress: str | None = None  # ingress_list name for POST /vcon
+
     def chat_model(self) -> str:
         """Return the active chat model name for the configured LLM provider."""
         if self.llm_provider == "anthropic":
@@ -52,9 +57,11 @@ class Settings:
 
         Recognized env vars: ``VCONFAKER_LLM_PROVIDER``, ``VCONFAKER_STORAGE``,
         ``VCONFAKER_OUTPUT_DIR``, ``VCONFAKER_CONCURRENCY``, ``VCONFAKER_WHISPER``,
-        ``OPENAI_API_KEY``, ``OPENAI_MODEL``, ``OPENAI_TTS_MODEL``,
-        ``WHISPER_MODEL``, ``ANTHROPIC_API_KEY``, ``ANTHROPIC_MODEL``,
-        ``AWS_ACCESS_KEY``, ``AWS_SECRET_KEY``, ``S3_BUCKET``.
+        ``VCONFAKER_SIGNING_KEY``, ``OPENAI_API_KEY``, ``OPENAI_MODEL``,
+        ``OPENAI_TTS_MODEL``, ``WHISPER_MODEL``, ``ANTHROPIC_API_KEY``,
+        ``ANTHROPIC_MODEL``, ``AWS_ACCESS_KEY``, ``AWS_SECRET_KEY``,
+        ``S3_BUCKET``, ``CONSERVER_URL``, ``CONSERVER_API_TOKEN``,
+        ``CONSERVER_INGRESS``.
         """
         env = os.environ
         base = cls(
@@ -72,6 +79,10 @@ class Settings:
             aws_access_key=env.get("AWS_ACCESS_KEY"),
             aws_secret_key=env.get("AWS_SECRET_KEY"),
             s3_bucket=env.get("S3_BUCKET"),
+            signing_key=env.get("VCONFAKER_SIGNING_KEY"),
+            conserver_url=env.get("CONSERVER_URL"),
+            conserver_api_token=env.get("CONSERVER_API_TOKEN"),
+            conserver_ingress=env.get("CONSERVER_INGRESS"),
         )
         for key, value in overrides.items():
             if value is not None and hasattr(base, key):

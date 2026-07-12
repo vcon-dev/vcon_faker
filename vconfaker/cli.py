@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 
 from vconfaker.config import Settings
-from vconfaker.engine import generate_many
+from vconfaker.engine import generate_many, load_signing_key
 from vconfaker.generators.scenario import random_spec
 from vconfaker.models import CONVERSATION_TYPES
 from vconfaker.providers.llm import get_provider
@@ -53,6 +53,8 @@ def cmd_generate(args: argparse.Namespace) -> list[str]:
         )
         for _ in range(args.count)
     ]
+    sign_key = load_signing_key(settings.signing_key, args.out_dir) if args.sign else None
+
     results = generate_many(
         specs,
         settings=settings,
@@ -62,6 +64,7 @@ def cmd_generate(args: argparse.Namespace) -> list[str]:
         tts=tts,
         stt=stt,
         concurrency=settings.concurrency,
+        sign_key=sign_key,
     )
     written = [r.vcon_locator for r in results]
     for locator in written:
@@ -87,7 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="LLM provider: openai | anthropic | scripted (default: env or openai).",
     )
-    gen.add_argument("--storage", choices=["local", "s3"], default="local")
+    gen.add_argument("--storage", choices=["local", "s3", "conserver"], default="local")
+    gen.add_argument(
+        "--sign",
+        action="store_true",
+        help="JWS-sign each vCon (uses VCONFAKER_SIGNING_KEY, or generates a "
+        "key pair in --out-dir).",
+    )
     gen.add_argument("--out-dir", default="./out", help="Local output dir (local storage).")
     gen.add_argument("--audio", action="store_true", help="Attach recording media (voice only).")
     gen.add_argument(

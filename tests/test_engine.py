@@ -140,6 +140,75 @@ def test_generate_vcon_all_types_offline(tmp_path, conv_type):
     assert result.audio_locator is None  # none of these modes synthesize audio
 
 
+def test_load_signing_key_generates_then_reuses(tmp_path):
+    from vconfaker.engine import load_signing_key
+
+    pem = load_signing_key(None, str(tmp_path))
+    key_file = tmp_path / "vcon-faker-signing-key.pem"
+    assert key_file.exists() and (tmp_path / "vcon-faker-signing-key.pem.pub").exists()
+    assert b"PRIVATE KEY" in pem
+    assert load_signing_key(str(key_file)) == pem
+
+
+def test_generate_vcon_signed_and_verifiable(tmp_path):
+    import json
+
+    from vcon import Vcon
+
+    from vconfaker.engine import generate_vcon, load_signing_key
+
+    sign_key = load_signing_key(None, str(tmp_path))
+    result = generate_vcon(
+        SPEC,
+        provider=ScriptedProvider(),
+        storage=LocalStorage(str(tmp_path)),
+        sign_key=sign_key,
+    )
+    stored = json.loads((tmp_path / result.vcon_locator.split(str(tmp_path) + "/")[1]).read_text())
+    assert "signatures" in stored and "payload" in stored
+    public_pem = (tmp_path / "vcon-faker-signing-key.pem.pub").read_bytes()
+    assert Vcon(stored).verify(public_pem)
+
+
+def test_conserver_storage_posts_json(monkeypatch):
+    from vconfaker.storage import ConserverStorage
+
+    calls: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            pass
+
+    def fake_post(url, **kwargs):  # noqa: ANN001
+        calls["url"] = url
+        calls.update(kwargs)
+        return FakeResponse()
+
+    import requests
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    store = ConserverStorage("http://conserver:8000/", "tok", "faker")
+    locator = store.save("2026/01/02/abc.vcon.json", b"{}", "application/json")
+    assert calls["url"] == "http://conserver:8000/vcon"
+    assert calls["params"] == {"ingress_list": "faker"}
+    assert calls["headers"]["x-conserver-api-token"] == "tok"
+    assert locator == "http://conserver:8000/vcon/abc"
+
+    with pytest.raises(ValueError):
+        store.save("a.mp3", b"...", "audio/mpeg")
+
+
+def test_get_storage_conserver_requires_url():
+    from vconfaker.storage import ConserverStorage
+
+    with pytest.raises(ValueError):
+        get_storage(Settings(storage_backend="conserver"))
+    assert isinstance(
+        get_storage(Settings(storage_backend="conserver", conserver_url="http://x")),
+        ConserverStorage,
+    )
+
+
 def test_local_storage_writes_and_returns_uri(tmp_path):
     store = LocalStorage(str(tmp_path))
     loc = store.save("a/b/c.json", b"hello", "application/json")

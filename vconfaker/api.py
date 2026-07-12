@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from vconfaker import __version__
 from vconfaker.config import Settings
-from vconfaker.engine import generate_many
+from vconfaker.engine import generate_many, load_signing_key
 from vconfaker.generators.scenario import random_spec
 from vconfaker.providers.llm import get_provider
 from vconfaker.providers.stt import get_stt_provider
@@ -34,6 +34,7 @@ class GenerateRequest(BaseModel):
     provider: str | None = None  # openai | anthropic | scripted
     audio: bool = False
     whisper: bool = False
+    sign: bool = False  # requires VCONFAKER_SIGNING_KEY on the server
 
 
 class GeneratedItem(BaseModel):
@@ -74,6 +75,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 tts = get_tts_provider(cfg, tts_name)
                 stt = get_stt_provider(cfg)
 
+            sign_key = None
+            if req.sign:
+                if not cfg.signing_key:
+                    raise ValueError("signing requested but VCONFAKER_SIGNING_KEY is not set")
+                sign_key = load_signing_key(cfg.signing_key)
+
             specs = [
                 random_spec(
                     business=req.business,
@@ -94,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 tts=tts,
                 stt=stt,
                 concurrency=req.concurrency,
+                sign_key=sign_key,
             )
             items = [
                 GeneratedItem(

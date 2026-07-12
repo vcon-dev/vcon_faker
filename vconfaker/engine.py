@@ -8,6 +8,7 @@ the same pipeline concurrently for batch generation.
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,6 +26,39 @@ from vconfaker.storage import Storage
 from vconfaker.vconbuild.builder import build_vcon
 
 logger = logging.getLogger(__name__)
+
+
+def load_signing_key(path: str | None, out_dir: str = ".") -> bytes:
+    """Return PEM private-key bytes, generating and saving a keypair if absent.
+
+    With no ``path``, the pair lands in ``out_dir/vcon-faker-signing-key.pem``
+    (private) and ``.pem.pub`` (public) so a generated corpus can be verified
+    later with ``Vcon.verify``.
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    key_path = path or os.path.join(out_dir, "vcon-faker-signing-key.pem")
+    if os.path.exists(key_path):
+        with open(key_path, "rb") as handle:
+            return handle.read()
+
+    private_key, public_key = Vcon.generate_key_pair()
+    pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    pub = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    os.makedirs(os.path.dirname(key_path) or ".", exist_ok=True)
+    with open(key_path, "wb") as handle:
+        handle.write(pem)
+    with open(f"{key_path}.pub", "wb") as handle:
+        handle.write(pub)
+    logger.info("generated signing key pair at %s", key_path)
+    return pem
 
 
 @dataclass
@@ -48,8 +82,13 @@ def generate_vcon(
     chat_model: str | None = None,
     tts_model: str | None = None,
     conversation_date: datetime | None = None,
+    sign_key: bytes | None = None,
 ) -> GenerationResult:
-    """Generate one synthetic vCon and persist it via ``storage``."""
+    """Generate one synthetic vCon and persist it via ``storage``.
+
+    ``sign_key`` (PEM RSA private key, e.g. from :func:`load_signing_key`)
+    JWS-signs the vCon after validation, before storage.
+    """
     conversation_date = conversation_date or datetime.now(UTC)
     # Incomplete calls never connected, so there is no conversation to author.
     turns = [] if spec.conversation_type == "incomplete" else generate_conversation(spec, provider)
@@ -110,6 +149,8 @@ def generate_vcon(
         wtf_document=wtf_document,
         uuid=vcon_uuid,
     )
+    if sign_key is not None:
+        vcon.sign(sign_key)
     vcon_locator = storage.save(
         f"{date_path}/{vcon_uuid}.vcon.json",
         vcon.to_json().encode("utf-8"),
@@ -141,6 +182,7 @@ def generate_many(
     stt: STTProvider | None = None,
     conversation_dates: list[datetime] | None = None,
     concurrency: int | None = None,
+    sign_key: bytes | None = None,
 ) -> list[GenerationResult]:
     """Generate multiple vCons, optionally in parallel."""
     if not specs:
@@ -164,6 +206,7 @@ def generate_many(
             chat_model=chat_model,
             tts_model=tts_model,
             conversation_date=conv_date,
+            sign_key=sign_key,
         )
 
     if workers <= 1 or len(specs) == 1:
