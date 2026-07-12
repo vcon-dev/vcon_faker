@@ -27,7 +27,8 @@ class GenerateRequest(BaseModel):
     business_name: str = "Acme Insurance"
     problem: str = "a billing question"
     emotion: str | None = None
-    conversation_type: str = "voice"
+    conversation_type: str = "voice"  # voice | messaging | email | incomplete | transfer
+    disposition: str | None = None    # incomplete-call reason; random if omitted
     count: int = 1
     concurrency: int = Field(default=1, ge=1, le=32)
     provider: str | None = None  # openai | anthropic | scripted
@@ -80,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     problem=req.problem,
                     emotion=req.emotion,
                     conversation_type=req.conversation_type,
+                    disposition=req.disposition,
                 )
                 for _ in range(req.count)
             ]

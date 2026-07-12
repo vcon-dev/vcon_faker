@@ -126,6 +126,20 @@ def test_generate_vcon_uuid_matches_storage_key(tmp_path):
     assert result.vcon_locator.endswith(f"{result.vcon_uuid}.vcon.json")
 
 
+@pytest.mark.parametrize("conv_type", ["voice", "messaging", "email", "incomplete", "transfer"])
+def test_generate_vcon_all_types_offline(tmp_path, conv_type):
+    from dataclasses import replace
+
+    from vconfaker.engine import generate_vcon
+
+    spec = replace(SPEC, conversation_type=conv_type, supervisor_name="Sam Lee")
+    result = generate_vcon(
+        spec, provider=ScriptedProvider(), storage=LocalStorage(str(tmp_path))
+    )
+    assert result.vcon_dict["uuid"] == result.vcon_uuid
+    assert result.audio_locator is None  # none of these modes synthesize audio
+
+
 def test_local_storage_writes_and_returns_uri(tmp_path):
     store = LocalStorage(str(tmp_path))
     loc = store.save("a/b/c.json", b"hello", "application/json")

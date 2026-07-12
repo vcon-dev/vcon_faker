@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# A single conversation turn: {"speaker": "Agent"|"Customer", "message": "..."}.
+# A single conversation turn: {"speaker": "Agent"|"Customer"|"Supervisor", "message": "..."}.
 Turn = dict[str, str]
+
+# Supported conversation modes. Only "voice" can carry synthesized audio; the
+# rest are pure text and never require TTS/wav synthesis.
+CONVERSATION_TYPES = ("voice", "messaging", "email", "incomplete", "transfer")
 
 
 @dataclass
@@ -26,5 +30,7 @@ class ConversationSpec:
     agent_email: str = ""
     customer_email: str = ""
     emotion: str | None = None
-    conversation_type: str = "voice"  # "voice" | "messaging"
-    prompt: str | None = None         # override the default template if set
+    conversation_type: str = "voice"   # one of CONVERSATION_TYPES
+    supervisor_name: str = ""          # third party for "transfer" mode
+    disposition: str | None = None     # failure reason for "incomplete" mode
+    prompt: str | None = None          # override the default template if set

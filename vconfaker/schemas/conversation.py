@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from vconfaker.models import Turn
 
-Speaker = Literal["Agent", "Customer"]
+Speaker = Literal["Agent", "Customer", "Supervisor"]
 
 
 class ConversationTurn(BaseModel):
@@ -42,7 +42,7 @@ CONVERSATION_JSON_SCHEMA: dict = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "speaker": {"type": "string", "enum": ["Agent", "Customer"]},
+                    "speaker": {"type": "string", "enum": ["Agent", "Customer", "Supervisor"]},
                     "message": {"type": "string", "minLength": 1},
                 },
                 "required": ["speaker", "message"],
@@ -69,6 +69,6 @@ def parse_conversation(raw: object) -> list[Turn]:
             continue
         speaker = item.get("speaker")
         message = item.get("message")
-        if speaker in ("Agent", "Customer") and isinstance(message, str) and message.strip():
+        if speaker in ("Agent", "Customer", "Supervisor") and isinstance(message, str) and message.strip():
             turns.append({"speaker": speaker, "message": message.strip()})
     return turns

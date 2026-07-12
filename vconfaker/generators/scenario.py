@@ -5,7 +5,10 @@ import random
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from vconfaker.models import ConversationSpec
+from vconfaker.models import CONVERSATION_TYPES, ConversationSpec
+
+# Spec-plausible reasons for an incomplete (never-connected) conversation.
+INCOMPLETE_DISPOSITIONS = ("no-answer", "busy", "voicemail-no-message", "hung-up")
 
 
 def random_spec(
@@ -15,6 +18,7 @@ def random_spec(
     problem: str,
     emotion: str | None = None,
     conversation_type: str = "voice",
+    disposition: str | None = None,
     prompt: str | None = None,
 ) -> ConversationSpec:
     """Build a fully populated :class:`ConversationSpec` with synthetic identities.
@@ -24,8 +28,14 @@ def random_spec(
     """
     from fake_names import female_names, last_names, male_names
 
+    if conversation_type not in CONVERSATION_TYPES:
+        raise ValueError(f"unknown conversation type: {conversation_type!r}")
+
     agent = f"{random.choice(male_names)} {random.choice(last_names)}"
     customer = f"{random.choice(female_names)} {random.choice(last_names)}"
+    supervisor = f"{random.choice(female_names)} {random.choice(last_names)}"
+    if conversation_type == "incomplete" and disposition is None:
+        disposition = random.choice(INCOMPLETE_DISPOSITIONS)
     domain = business.replace(" ", "").lower() or "acme"
     return ConversationSpec(
         agent_name=agent,
@@ -39,6 +49,8 @@ def random_spec(
         problem=problem,
         emotion=emotion,
         conversation_type=conversation_type,
+        supervisor_name=supervisor,
+        disposition=disposition,
         prompt=prompt,
     )
 

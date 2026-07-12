@@ -16,6 +16,7 @@ import argparse
 from vconfaker.config import Settings
 from vconfaker.engine import generate_many
 from vconfaker.generators.scenario import random_spec
+from vconfaker.models import CONVERSATION_TYPES
 from vconfaker.providers.llm import get_provider
 from vconfaker.providers.stt import get_stt_provider
 from vconfaker.providers.tts import get_tts_provider
@@ -48,6 +49,7 @@ def cmd_generate(args: argparse.Namespace) -> list[str]:
             problem=args.problem,
             emotion=args.emotion,
             conversation_type=args.type,
+            disposition=args.disposition,
         )
         for _ in range(args.count)
     ]
@@ -74,7 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     gen = sub.add_parser("generate", help="Generate one or more synthetic vCons.")
     gen.add_argument("--count", type=int, default=1, help="How many to generate.")
     gen.add_argument("--concurrency", type=int, default=1, help="Parallel workers.")
-    gen.add_argument("--type", choices=["voice", "messaging"], default="voice")
+    gen.add_argument("--type", choices=list(CONVERSATION_TYPES), default="voice")
+    gen.add_argument(
+        "--disposition",
+        default=None,
+        help="Incomplete-call reason (e.g. no-answer, busy); random if omitted.",
+    )
     gen.add_argument(
         "--provider",
         default=None,

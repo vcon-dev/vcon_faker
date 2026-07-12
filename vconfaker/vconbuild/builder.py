@@ -45,6 +45,11 @@ SYNTHETIC_VENDOR = "vcon-faker"
 Turn = dict[str, str]
 
 
+def _turn_seconds(turn: Turn) -> float:
+    """Approximate spoken duration of one turn (~2.5 words/second, min 1s)."""
+    return max(round(len(turn["message"].split()) / 2.5, 3), 1.0)
+
+
 def _build_wtf_document(
     turns: list[Turn],
     duration: float,
@@ -190,6 +195,8 @@ def build_vcon(
     conversation: list[Turn],
     emotion: str | None = None,
     conversation_type: str = "voice",
+    supervisor_name: str = "",
+    disposition: str | None = None,
     conversation_date: datetime | None = None,
     generate_audio: bool = False,
     audio_url: str | None = None,
@@ -209,7 +216,12 @@ def build_vcon(
         *_phone/*_email: Party identifiers.
         business_name/business/problem/emotion: Scenario metadata (also tagged).
         conversation: List of ``{"speaker", "message"}`` turns.
-        conversation_type: ``"voice"`` or ``"messaging"``.
+        conversation_type: One of ``voice | messaging | email | incomplete |
+            transfer``. Only ``voice`` may carry audio; ``incomplete`` needs no
+            turns at all.
+        supervisor_name: Third party for ``transfer`` mode.
+        disposition: Failure reason for ``incomplete`` mode (default
+            ``"no-answer"``).
         conversation_date: Timezone-aware start time of the conversation.
         generate_audio: Whether external recording media is attached (voice only).
         audio_url/audio_filename/audio_content_hash/audio_duration: Media refs.
@@ -231,7 +243,7 @@ def build_vcon(
     turns: list[Turn] = [
         t for t in conversation if isinstance(t, dict) and t.get("message")
     ]
-    if not turns:
+    if not turns and conversation_type != "incomplete":
         raise ValueError("conversation has no usable turns")
 
     start_iso = conversation_date.isoformat()
@@ -242,7 +254,7 @@ def build_vcon(
 
     last_dialog_time = conversation_date
 
-    if conversation_type == "messaging":
+    if conversation_type in ("messaging", "email"):
         # Agent index 0, customer index 1.
         v.add_party(
             Party(
@@ -269,9 +281,13 @@ def build_vcon(
         for i, turn in enumerate(turns):
             party_index = 1 if turn.get("speaker") == "Customer" else 0
             if i > 0:
-                msg_time += timedelta(
-                    minutes=2 + (i % 4), seconds=(i * 7) % 60
-                )
+                if conversation_type == "email":
+                    # Email replies arrive hours apart, not minutes.
+                    msg_time += timedelta(hours=1 + (i % 5), minutes=(i * 11) % 60)
+                else:
+                    msg_time += timedelta(
+                        minutes=2 + (i % 4), seconds=(i * 7) % 60
+                    )
             v.add_dialog(
                 Dialog(
                     type="text",
@@ -284,7 +300,110 @@ def build_vcon(
                 )
             )
             last_dialog_time = msg_time
-    else:
+    elif conversation_type == "incomplete":
+        # A call attempt that never connected. Customer 0, agent 1; a single
+        # "incomplete" dialog carrying the disposition, no turns and no media.
+        v.add_party(
+            Party(
+                id=f"{customer_phone}_{customer_email}_1100",
+                name=customer_name,
+                tel=customer_phone,
+                mailto=customer_email,
+                role="customer",
+                validation="synthetic",
+            )
+        )
+        v.add_party(
+            Party(
+                id=agent_email,
+                name=agent_name,
+                tel=agent_phone,
+                mailto=agent_email,
+                role="agent",
+                validation="synthetic",
+            )
+        )
+        v.add_dialog(
+            Dialog(
+                type="incomplete",
+                start=start_iso,
+                parties=[0, 1],
+                originator=0,
+                disposition=disposition or "no-answer",
+            )
+        )
+    elif conversation_type == "transfer":
+        # Customer 0, agent 1, supervisor 2. Per-turn text dialogs with a
+        # "transfer" dialog inserted where the supervisor takes over.
+        v.add_party(
+            Party(
+                id=f"{customer_phone}_{customer_email}_1100",
+                name=customer_name,
+                tel=customer_phone,
+                mailto=customer_email,
+                role="customer",
+                validation="synthetic",
+            )
+        )
+        v.add_party(
+            Party(
+                id=agent_email,
+                name=agent_name,
+                tel=agent_phone,
+                mailto=agent_email,
+                role="agent",
+                validation="synthetic",
+            )
+        )
+        v.add_party(
+            Party(
+                name=supervisor_name or "Supervisor",
+                role="supervisor",
+                validation="synthetic",
+            )
+        )
+
+        party_map = {"Customer": 0, "Agent": 1, "Supervisor": 2}
+        cursor = conversation_date
+        transfer_added = False
+        for turn in turns:
+            speaker = turn.get("speaker", "Agent")
+            if speaker == "Supervisor" and not transfer_added:
+                v.add_dialog(
+                    Dialog(
+                        type="transfer",
+                        start=cursor.isoformat(),
+                        parties=[0, 1, 2],
+                        transfer={"transferor": 1, "transferee": 0, "transfer_target": 2},
+                    )
+                )
+                transfer_added = True
+            party_index = party_map.get(speaker, 1)
+            v.add_dialog(
+                Dialog(
+                    type="text",
+                    start=cursor.isoformat(),
+                    parties=[party_index],
+                    originator=party_index,
+                    mediatype="text/plain",
+                    body=turn["message"],
+                    encoding="none",
+                )
+            )
+            last_dialog_time = cursor
+            cursor += timedelta(seconds=_turn_seconds(turn))
+        if not transfer_added:
+            # The LLM never voiced the supervisor; still record the transfer.
+            v.add_dialog(
+                Dialog(
+                    type="transfer",
+                    start=cursor.isoformat(),
+                    parties=[0, 1, 2],
+                    transfer={"transferor": 1, "transferee": 0, "transfer_target": 2},
+                )
+            )
+            last_dialog_time = cursor
+    elif conversation_type == "voice":
         # Voice. Customer index 0, agent index 1 (preserves prior convention).
         v.add_party(
             Party(
@@ -306,8 +425,6 @@ def build_vcon(
                 validation="synthetic",
             )
         )
-
-        transcript_text = "\n".join(t["message"] for t in turns)
 
         if generate_audio:
             v.add_dialog(
@@ -339,25 +456,62 @@ def build_vcon(
                 dialog_index=0,
             )
         else:
-            # No audio: keep the conversation inline as a single text dialog.
-            v.add_dialog(
-                Dialog(
-                    type="text",
-                    start=start_iso,
-                    parties=[1, 0],
-                    originator=1,
-                    mediatype="text/plain",
-                    body=transcript_text,
-                    encoding="none",
+            # Transcript-only voice: per-turn text dialogs plus a WTF
+            # transcription analysis, so audio-free vCons still feed
+            # transcript-consuming pipelines. Durations are estimated from
+            # word counts (~2.5 words/second).
+            cursor = conversation_date
+            for turn in turns:
+                party_index = 0 if turn.get("speaker") == "Customer" else 1
+                v.add_dialog(
+                    Dialog(
+                        type="text",
+                        start=cursor.isoformat(),
+                        parties=[party_index],
+                        originator=party_index,
+                        mediatype="text/plain",
+                        body=turn["message"],
+                        encoding="none",
+                    )
                 )
+                last_dialog_time = cursor
+                cursor += timedelta(seconds=_turn_seconds(turn))
+
+            estimated_duration = sum(_turn_seconds(t) for t in turns)
+            wtf = wtf_document or _build_wtf_document(
+                turns,
+                estimated_duration,
+                provider=SYNTHETIC_VENDOR,
+                model=chat_model or "unknown",
+                created_at=start_iso,
             )
+            v.add_wtf_transcription_analysis(
+                transcript=wtf["transcript"],
+                segments=wtf["segments"],
+                metadata=wtf["metadata"],
+                dialog_index=0,
+            )
+    else:
+        raise ValueError(f"unknown conversation type: {conversation_type!r}")
 
     # Deterministic, templated summary (vendor reflects the generator, not an LLM).
-    emotion_clause = f" The customer is {emotion}." if emotion else ""
-    summary_text = (
-        f"{agent_name} from {business_name} (a {business}) assists {customer_name} "
-        f"regarding {problem}.{emotion_clause}"
-    )
+    if conversation_type == "incomplete":
+        summary_text = (
+            f"Call attempt from {customer_name} to {agent_name} at {business_name} "
+            f"(a {business}) regarding {problem} did not connect: "
+            f"{disposition or 'no-answer'}."
+        )
+    else:
+        emotion_clause = f" The customer is {emotion}." if emotion else ""
+        transfer_clause = (
+            f" The call was transferred to {supervisor_name or 'a supervisor'}."
+            if conversation_type == "transfer"
+            else ""
+        )
+        summary_text = (
+            f"{agent_name} from {business_name} (a {business}) assists {customer_name} "
+            f"regarding {problem}.{emotion_clause}{transfer_clause}"
+        )
     v.add_analysis(
         type="summary",
         dialog=0,

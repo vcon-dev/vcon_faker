@@ -51,7 +51,8 @@ def generate_vcon(
 ) -> GenerationResult:
     """Generate one synthetic vCon and persist it via ``storage``."""
     conversation_date = conversation_date or datetime.now(UTC)
-    turns = generate_conversation(spec, provider)
+    # Incomplete calls never connected, so there is no conversation to author.
+    turns = [] if spec.conversation_type == "incomplete" else generate_conversation(spec, provider)
 
     # Library UUID8, generated up front so the audio/vCon storage keys match
     # the vCon's own uuid field.
@@ -96,6 +97,8 @@ def generate_vcon(
         emotion=spec.emotion,
         conversation=turns,
         conversation_type=spec.conversation_type,
+        supervisor_name=spec.supervisor_name,
+        disposition=spec.disposition,
         conversation_date=conversation_date,
         generate_audio=want_audio,
         audio_url=audio_url,

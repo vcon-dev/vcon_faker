@@ -22,11 +22,13 @@ from vconfaker.schemas.conversation import CONVERSATION_JSON_SCHEMA, Conversatio
 
 logger = logging.getLogger(__name__)
 
-VALID_SPEAKERS = {"Agent", "Customer"}
+VALID_SPEAKERS = {"Agent", "Customer", "Supervisor"}
 
 SYSTEM_PROMPT = (
     "You generate realistic customer support conversations. "
-    "Each turn has speaker exactly 'Agent' or 'Customer' and a non-empty message. "
+    "Each turn has speaker exactly 'Agent', 'Customer', or 'Supervisor' "
+    "(use 'Supervisor' only when the prompt describes a transfer) and a "
+    "non-empty message. "
     "Use the agent and customer names given in the user prompt consistently."
 )
 
@@ -67,6 +69,16 @@ class ScriptedProvider(LLMProvider):
         if self._turns is not None:
             return validate_turns(self._turns)
         agent, customer = spec.agent_name, spec.customer_name
+        if spec.conversation_type == "transfer":
+            supervisor = spec.supervisor_name or "the supervisor"
+            return [
+                {"speaker": "Agent", "message": f"Hello, this is {agent} at {spec.business_name}. How can I help you today?"},
+                {"speaker": "Customer", "message": f"Hi {agent}, this is {customer}. I am calling about {spec.problem}."},
+                {"speaker": "Agent", "message": f"I need to escalate this. Let me transfer you to {supervisor}."},
+                {"speaker": "Supervisor", "message": f"Hello {customer}, this is {supervisor}. I can resolve {spec.problem} for you right now."},
+                {"speaker": "Customer", "message": "Thank you, that resolves my issue."},
+                {"speaker": "Supervisor", "message": f"Glad I could help. Thank you for contacting {spec.business_name}."},
+            ]
         return [
             {"speaker": "Agent", "message": f"Hello, this is {agent} at {spec.business_name}. How can I help you today?"},
             {"speaker": "Customer", "message": f"Hi {agent}, this is {customer}. I am calling about {spec.problem}."},

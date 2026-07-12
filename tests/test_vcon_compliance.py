@@ -62,7 +62,35 @@ def _messaging() -> Vcon:
     return vb.build_vcon(**COMMON, conversation_type="messaging")
 
 
-ALL_BUILDERS = [_voice_with_audio, _voice_no_audio, _messaging]
+def _email() -> Vcon:
+    return vb.build_vcon(**COMMON, conversation_type="email")
+
+
+def _incomplete() -> Vcon:
+    return vb.build_vcon(
+        **{**COMMON, "conversation": []},
+        conversation_type="incomplete",
+        disposition="busy",
+    )
+
+
+TRANSFER_CONVERSATION = [
+    *CONVERSATION[:3],
+    {"speaker": "Agent", "message": "Let me transfer you to my supervisor Sam Lee."},
+    {"speaker": "Supervisor", "message": "Hello Jamie, this is Sam Lee. I have resolved your billing issue."},
+    {"speaker": "Customer", "message": "Thank you Sam."},
+]
+
+
+def _transfer() -> Vcon:
+    return vb.build_vcon(
+        **{**COMMON, "conversation": TRANSFER_CONVERSATION},
+        conversation_type="transfer",
+        supervisor_name="Sam Lee",
+    )
+
+
+ALL_BUILDERS = [_voice_with_audio, _voice_no_audio, _messaging, _email, _incomplete, _transfer]
 _ids = [b.__name__ for b in ALL_BUILDERS]
 
 
@@ -159,8 +187,9 @@ def test_json_round_trip_revalidates(build):
     assert ok, f"round-trip is_valid failed: {errors}"
 
 
-def test_voice_transcript_is_a_wtf_document():
-    d = _voice_with_audio().to_dict()
+@pytest.mark.parametrize("build", [_voice_with_audio, _voice_no_audio], ids=["with_audio", "no_audio"])
+def test_voice_transcript_is_a_wtf_document(build):
+    d = build().to_dict()
     transcripts = [a for a in d["analysis"] if a["type"] in ("transcript", "transcription")]
     assert len(transcripts) == 1
     t = transcripts[0]
@@ -173,7 +202,51 @@ def test_voice_transcript_is_a_wtf_document():
     assert "wtf_transcription" in d.get("extensions", [])
 
 
+def test_voice_no_audio_has_per_turn_dialogs():
+    dialogs = _voice_no_audio().to_dict()["dialog"]
+    assert len(dialogs) == len(CONVERSATION)
+    assert all(d["type"] == "text" for d in dialogs)
+    starts = [d["start"] for d in dialogs]
+    assert starts == sorted(starts)
+
+
+def test_incomplete_has_single_disposition_dialog():
+    d = _incomplete().to_dict()
+    assert len(d["dialog"]) == 1
+    dlg = d["dialog"][0]
+    assert dlg["type"] == "incomplete"
+    assert dlg["disposition"] == "busy"
+    assert "body" not in dlg or not dlg["body"]
+    assert not d.get("analysis") or all(a["type"] != "transcription" for a in d["analysis"])
+
+
+def test_transfer_has_three_parties_and_transfer_dialog():
+    d = _transfer().to_dict()
+    assert len(d["parties"]) == 3
+    assert d["parties"][2]["name"] == "Sam Lee"
+    transfers = [x for x in d["dialog"] if x["type"] == "transfer"]
+    assert len(transfers) == 1
+    texts = [x for x in d["dialog"] if x["type"] == "text"]
+    assert len(texts) == len(TRANSFER_CONVERSATION)
+    # Transfer dialog sits immediately before the first Supervisor turn.
+    idx = d["dialog"].index(transfers[0])
+    assert d["dialog"][idx + 1]["body"].startswith("Hello Jamie, this is Sam Lee")
+
+
+def test_email_dialogs_are_hours_apart():
+    dialogs = _email().to_dict()["dialog"]
+    assert len(dialogs) == len(CONVERSATION)
+    first = datetime.fromisoformat(dialogs[0]["start"])
+    second = datetime.fromisoformat(dialogs[1]["start"])
+    assert (second - first).total_seconds() >= 3600
+
+
 def test_empty_conversation_raises():
     args = {**COMMON, "conversation": []}
     with pytest.raises(ValueError):
         vb.build_vcon(**args)
+
+
+def test_unknown_conversation_type_raises():
+    with pytest.raises(ValueError):
+        vb.build_vcon(**COMMON, conversation_type="carrier-pigeon")
