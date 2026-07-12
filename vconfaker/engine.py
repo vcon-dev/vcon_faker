@@ -8,11 +8,12 @@ the same pipeline concurrently for batch generation.
 from __future__ import annotations
 
 import logging
-import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+from vcon import Vcon, compute_content_hash
 
 from vconfaker.config import Settings
 from vconfaker.generators.conversation import generate_conversation
@@ -21,7 +22,7 @@ from vconfaker.providers.llm import LLMProvider
 from vconfaker.providers.stt import STTProvider
 from vconfaker.providers.tts import TTSProvider
 from vconfaker.storage import Storage
-from vconfaker.vconbuild.builder import build_vcon, sha512_base64url
+from vconfaker.vconbuild.builder import build_vcon
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,9 @@ def generate_vcon(
     conversation_date = conversation_date or datetime.now(UTC)
     turns = generate_conversation(spec, provider)
 
-    vcon_uuid = str(uuid.uuid4())
+    # Library UUID8, generated up front so the audio/vCon storage keys match
+    # the vCon's own uuid field.
+    vcon_uuid = Vcon.uuid8_domain_name("vcon-faker.example")
     date_path = conversation_date.strftime("%Y/%m/%d")
     want_audio = generate_audio and spec.conversation_type == "voice"
 
@@ -68,7 +71,7 @@ def generate_vcon(
             raise ValueError("generate_audio=True requires a tts provider")
         audio = tts.synthesize(turns)
         audio_filename = f"{vcon_uuid}.mp3"
-        audio_content_hash = sha512_base64url(audio.data)
+        audio_content_hash = compute_content_hash(audio.data)
         audio_duration = audio.duration
         audio_locator = storage.save(f"{date_path}/{audio_filename}", audio.data, audio.mediatype)
         audio_url = audio_locator
@@ -102,6 +105,7 @@ def generate_vcon(
         chat_model=chat_model,
         tts_model=tts_model,
         wtf_document=wtf_document,
+        uuid=vcon_uuid,
     )
     vcon_locator = storage.save(
         f"{date_path}/{vcon_uuid}.vcon.json",

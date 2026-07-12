@@ -116,6 +116,16 @@ def test_generate_conversation_empty_raises():
         generate_conversation(SPEC, Empty())
 
 
+def test_generate_vcon_uuid_matches_storage_key(tmp_path):
+    from vconfaker.engine import generate_vcon
+
+    result = generate_vcon(
+        SPEC, provider=ScriptedProvider(), storage=LocalStorage(str(tmp_path))
+    )
+    assert result.vcon_dict["uuid"] == result.vcon_uuid
+    assert result.vcon_locator.endswith(f"{result.vcon_uuid}.vcon.json")
+
+
 def test_local_storage_writes_and_returns_uri(tmp_path):
     store = LocalStorage(str(tmp_path))
     loc = store.save("a/b/c.json", b"hello", "application/json")

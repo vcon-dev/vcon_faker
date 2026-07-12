@@ -24,8 +24,6 @@ recognizer output. A real speech-to-text round-trip is planned for a later phase
 """
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
@@ -44,22 +42,7 @@ LAWFUL_BASIS_TOS_URL = "https://github.com/vcon-dev/vcon_faker/blob/main/CONSENT
 # Honest provenance label for synthetic output (not a real ASR/analysis vendor).
 SYNTHETIC_VENDOR = "vcon-faker"
 
-# vCon syntax version this module emits (matches IETF draft-ietf-vcon-vcon-core-02).
-VCON_SYNTAX_VERSION = "0.4.0"
-
 Turn = dict[str, str]
-
-
-def sha512_base64url(data: bytes) -> str:
-    """Return a vCon-spec ``content_hash``: ``sha512-<base64url, no padding>``.
-
-    This is the format required for externally referenced media by
-    ``draft-ietf-vcon-vcon-core-02`` and the speckit glossary. (The Python
-    library's internal helpers still compute an unprefixed SHA-256 digest; the
-    spec and the vcon-js validator require this SHA-512 prefixed form.)
-    """
-    digest = hashlib.sha512(data).digest()
-    return "sha512-" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 def _build_wtf_document(
@@ -125,6 +108,13 @@ def _add_synthetic_governance(v: Vcon, *, now: str, tags: dict[str, Any]) -> Non
 
     Both are vCon-level attachments (``party: 0``, ``dialog: 0``) with
     JSON-string bodies and ``encoding: "json"`` per the speckit non-negotiables.
+
+    Deliberately NOT using ``Vcon.add_tag`` / ``add_lawful_basis_attachment``
+    (vcon 0.9.6): both emit ``body`` as a native list/dict rather than a JSON
+    string, which strict validators and this repo's compliance gate reject.
+    (``Vcon.validate_extensions()`` shares the drift: it requires dict bodies,
+    so it is not part of the CI gate either.) Switch to the helpers once the
+    library emits and validates string bodies.
     """
     tag_body = dict(tags)
     tag_body["synthetic"] = "true"
@@ -209,6 +199,7 @@ def build_vcon(
     chat_model: str | None = None,
     tts_model: str | None = None,
     wtf_document: dict[str, Any] | None = None,
+    uuid: str | None = None,
     validate: bool = True,
 ) -> Vcon:
     """Assemble a spec-compliant, synthetic-marked vCon and return it.
@@ -223,10 +214,12 @@ def build_vcon(
         generate_audio: Whether external recording media is attached (voice only).
         audio_url/audio_filename/audio_content_hash/audio_duration: Media refs.
             ``audio_content_hash`` must already be in ``sha512-<base64url>`` form
-            (see ``sha512_base64url``).
+            (use ``vcon.compute_content_hash``).
         chat_model/tts_model: Recorded for provenance in analysis/WTF metadata.
         wtf_document: Optional pre-built WTF payload (``transcript``, ``segments``,
             ``metadata``) from an STT round-trip; defaults to source-text WTF.
+        uuid: Optional vCon UUID (e.g. pre-generated so storage keys match);
+            defaults to the library-generated UUID8 from ``build_new``.
         validate: Run ``Vcon.is_valid`` and raise ``ValueError`` on failure.
 
     Returns:
@@ -243,6 +236,8 @@ def build_vcon(
 
     start_iso = conversation_date.isoformat()
     v = Vcon.build_new()
+    if uuid:
+        v.vcon_dict["uuid"] = uuid
     v.vcon_dict["subject"] = f"{problem} ({business_name})"
 
     last_dialog_time = conversation_date
@@ -387,13 +382,6 @@ def build_vcon(
 
     # created_at: 15s after the last dialog (matches prior behavior).
     v.vcon_dict["created_at"] = (last_dialog_time + timedelta(seconds=15)).isoformat()
-
-    # Defensive post-processing the library mostly does for us in >=0.9.2.
-    v.vcon_dict["vcon"] = VCON_SYNTAX_VERSION
-    if v.vcon_dict.get("group") == []:
-        v.vcon_dict.pop("group", None)
-    if v.vcon_dict.get("redacted") == {}:
-        v.vcon_dict.pop("redacted", None)
 
     if validate:
         is_valid, errors = v.is_valid()
