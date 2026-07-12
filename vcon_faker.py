@@ -19,6 +19,7 @@ from vconfaker.engine import generate_vcon
 from vconfaker.generators.conversation import DEFAULT_MESSAGING_PROMPT, DEFAULT_VOICE_PROMPT
 from vconfaker.generators.scenario import random_business_datetime, random_spec
 from vconfaker.providers.llm import get_provider
+from vconfaker.providers.stt import get_stt_provider
 from vconfaker.providers.tts import get_tts_provider
 from vconfaker.storage import get_storage
 
@@ -102,6 +103,7 @@ def main() -> None:
         provider = get_provider(settings)
         storage = get_storage(settings)
         tts = get_tts_provider(settings) if generate_audio else None
+        stt = get_stt_provider(settings) if generate_audio else None
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -133,7 +135,8 @@ def main() -> None:
                     storage=storage,
                     generate_audio=generate_audio,
                     tts=tts,
-                    chat_model=settings.openai_model,
+                    stt=stt,
+                    chat_model=settings.chat_model(),
                     tts_model=settings.openai_tts_model,
                     conversation_date=conv_date,
                 )

@@ -15,10 +15,6 @@ name. Over the course of the call the agent gathers two pieces of information,
 helps with the issue, and politely closes the call. Spell out digits (for
 example say "one zero zero zero", not "one thousand"). The conversation should
 be at least 10 turns and feel complete.
-
-Return JSON shaped like:
-{"conversation": [{"speaker": "Agent", "message": "..."},
-                  {"speaker": "Customer", "message": "..."}]}
 """
 
 DEFAULT_MESSAGING_PROMPT = """\
@@ -26,10 +22,6 @@ Generate a realistic text-messaging conversation between a customer and a
 support agent. The customer opens with a problem; the agent introduces
 themselves and their company, gathers what they need, resolves the issue, and
 offers further help. Use short, natural messaging-style turns. At least 8 turns.
-
-Return JSON shaped like:
-{"conversation": [{"speaker": "Customer", "message": "..."},
-                  {"speaker": "Agent", "message": "..."}]}
 """
 
 

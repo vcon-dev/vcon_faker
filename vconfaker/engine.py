@@ -2,20 +2,23 @@
 
 ``generate_vcon`` runs the full pipeline for a single conversation:
 scenario spec -> conversation turns -> (optional audio) -> spec-compliant vCon
--> stored blob, returning a :class:`GenerationResult`. Keeping it here means the
-pipeline lives in exactly one place.
+-> stored blob, returning a :class:`GenerationResult`. ``generate_many`` runs
+the same pipeline concurrently for batch generation.
 """
 from __future__ import annotations
 
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from vconfaker.config import Settings
 from vconfaker.generators.conversation import generate_conversation
 from vconfaker.models import ConversationSpec
 from vconfaker.providers.llm import LLMProvider
+from vconfaker.providers.stt import STTProvider
 from vconfaker.providers.tts import TTSProvider
 from vconfaker.storage import Storage
 from vconfaker.vconbuild.builder import build_vcon, sha512_base64url
@@ -40,6 +43,7 @@ def generate_vcon(
     storage: Storage,
     generate_audio: bool = False,
     tts: TTSProvider | None = None,
+    stt: STTProvider | None = None,
     chat_model: str | None = None,
     tts_model: str | None = None,
     conversation_date: datetime | None = None,
@@ -57,6 +61,7 @@ def generate_vcon(
     audio_content_hash: str | None = None
     audio_duration = 0.0
     audio_locator: str | None = None
+    wtf_document = None
 
     if want_audio:
         if tts is None:
@@ -67,6 +72,13 @@ def generate_vcon(
         audio_duration = audio.duration
         audio_locator = storage.save(f"{date_path}/{audio_filename}", audio.data, audio.mediatype)
         audio_url = audio_locator
+        if stt is not None:
+            wtf_document = stt.transcribe(
+                audio,
+                turns,
+                created_at=conversation_date.isoformat(),
+                tts_model=tts_model,
+            )
 
     vcon = build_vcon(
         agent_name=spec.agent_name,
@@ -89,6 +101,7 @@ def generate_vcon(
         audio_duration=audio_duration,
         chat_model=chat_model,
         tts_model=tts_model,
+        wtf_document=wtf_document,
     )
     vcon_locator = storage.save(
         f"{date_path}/{vcon_uuid}.vcon.json",
@@ -108,3 +121,51 @@ def generate_vcon(
         audio_locator=audio_locator,
         vcon_dict=vcon.to_dict(),
     )
+
+
+def generate_many(
+    specs: list[ConversationSpec],
+    *,
+    settings: Settings,
+    provider: LLMProvider,
+    storage: Storage,
+    generate_audio: bool = False,
+    tts: TTSProvider | None = None,
+    stt: STTProvider | None = None,
+    conversation_dates: list[datetime] | None = None,
+    concurrency: int | None = None,
+) -> list[GenerationResult]:
+    """Generate multiple vCons, optionally in parallel."""
+    if not specs:
+        return []
+
+    workers = max(1, concurrency if concurrency is not None else settings.concurrency)
+    chat_model = settings.chat_model()
+    tts_model = settings.openai_tts_model
+
+    def _one(index: int, spec: ConversationSpec) -> GenerationResult:
+        conv_date = None
+        if conversation_dates and index < len(conversation_dates):
+            conv_date = conversation_dates[index]
+        return generate_vcon(
+            spec,
+            provider=provider,
+            storage=storage,
+            generate_audio=generate_audio,
+            tts=tts,
+            stt=stt,
+            chat_model=chat_model,
+            tts_model=tts_model,
+            conversation_date=conv_date,
+        )
+
+    if workers <= 1 or len(specs) == 1:
+        return [_one(i, spec) for i, spec in enumerate(specs)]
+
+    results: list[GenerationResult | None] = [None] * len(specs)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_one, i, spec): i for i, spec in enumerate(specs)}
+        for future in as_completed(futures):
+            index = futures[future]
+            results[index] = future.result()
+    return [r for r in results if r is not None]

@@ -1,13 +1,13 @@
 """Provider-agnostic LLM chat for conversation generation.
 
-A small interface with two implementations:
+Implementations:
 
-* :class:`ScriptedProvider` - deterministic, offline, dependency-free; used by
-  tests, demos, and ``--provider scripted``.
-* :class:`OpenAIProvider` - lazily imports the ``openai`` SDK and requests a JSON
-  object response, then validates the turns.
+* :class:`ScriptedProvider` - deterministic, offline; used by tests and
+  ``--provider scripted``.
+* :class:`OpenAIProvider` - structured JSON schema output via OpenAI chat.
+* :class:`AnthropicProvider` - structured tool output via Claude.
 
-Add Claude / local providers by subclassing :class:`LLMProvider` and extending
+Add local providers by subclassing :class:`LLMProvider` and extending
 :func:`get_provider`.
 """
 from __future__ import annotations
@@ -18,18 +18,28 @@ from abc import ABC, abstractmethod
 
 from vconfaker.config import Settings
 from vconfaker.models import ConversationSpec, Turn
+from vconfaker.schemas.conversation import CONVERSATION_JSON_SCHEMA, ConversationResponse
 
 logger = logging.getLogger(__name__)
 
 VALID_SPEAKERS = {"Agent", "Customer"}
 
+SYSTEM_PROMPT = (
+    "You generate realistic customer support conversations. "
+    "Each turn has speaker exactly 'Agent' or 'Customer' and a non-empty message. "
+    "Use the agent and customer names given in the user prompt consistently."
+)
+
 
 def validate_turns(raw: object) -> list[Turn]:
     """Coerce arbitrary provider output into clean, validated turns."""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    items = raw.get("conversation", raw) if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        return []
     turns: list[Turn] = []
-    if not isinstance(raw, list):
-        return turns
-    for item in raw:
+    for item in items:
         if not isinstance(item, dict):
             continue
         speaker = item.get("speaker")
@@ -67,7 +77,7 @@ class ScriptedProvider(LLMProvider):
 
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI chat-completions provider (JSON response)."""
+    """OpenAI chat-completions with strict JSON schema structured output."""
 
     def __init__(self, api_key: str, model: str) -> None:
         self._api_key = api_key
@@ -79,24 +89,62 @@ class OpenAIProvider(LLMProvider):
         client = OpenAI(api_key=self._api_key)
         completion = client.chat.completions.create(
             model=self._model,
-            response_format={"type": "json_object"},
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You output JSON with a 'conversation' array of objects "
-                        "{speaker, message}. speaker is exactly 'Agent' or 'Customer'. "
-                        "Keep the agent and customer names consistent throughout."
-                    ),
-                },
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "conversation_response",
+                    "strict": True,
+                    "schema": CONVERSATION_JSON_SCHEMA,
+                },
+            },
         )
         content = completion.choices[0].message.content or "{}"
-        data = json.loads(content)
-        turns = validate_turns(data.get("conversation", []))
+        response = ConversationResponse.model_validate(json.loads(content))
+        turns = [{"speaker": t.speaker, "message": t.message} for t in response.conversation]
         logger.info("OpenAIProvider generated %d turns with model %s", len(turns), self._model)
         return turns
+
+
+class AnthropicProvider(LLMProvider):
+    """Anthropic Claude with tool-use structured output."""
+
+    def __init__(self, api_key: str, model: str) -> None:
+        self._api_key = api_key
+        self._model = model
+
+    def generate(self, spec: ConversationSpec, prompt: str) -> list[Turn]:
+        import anthropic  # lazy import; optional dependency
+
+        client = anthropic.Anthropic(api_key=self._api_key)
+        response = client.messages.create(
+            model=self._model,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[
+                {
+                    "name": "emit_conversation",
+                    "description": "Return the generated conversation turns.",
+                    "input_schema": CONVERSATION_JSON_SCHEMA,
+                }
+            ],
+            tool_choice={"type": "tool", "name": "emit_conversation"},
+        )
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "emit_conversation":
+                response = ConversationResponse.model_validate(block.input)
+                turns = [{"speaker": t.speaker, "message": t.message} for t in response.conversation]
+                logger.info(
+                    "AnthropicProvider generated %d turns with model %s",
+                    len(turns),
+                    self._model,
+                )
+                return turns
+        raise ValueError("Anthropic provider returned no conversation tool output")
 
 
 def get_provider(settings: Settings, name: str | None = None) -> LLMProvider:
@@ -108,4 +156,8 @@ def get_provider(settings: Settings, name: str | None = None) -> LLMProvider:
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is not configured for the 'openai' provider")
         return OpenAIProvider(settings.openai_api_key, settings.openai_model)
+    if name == "anthropic":
+        if not settings.anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not configured for the 'anthropic' provider")
+        return AnthropicProvider(settings.anthropic_api_key, settings.anthropic_model)
     raise ValueError(f"unknown llm provider: {name!r}")

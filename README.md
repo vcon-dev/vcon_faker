@@ -11,27 +11,31 @@ Every generated vCon is marked **synthetic** (a `lawful_basis` attachment, a
 `tags` attachment with `synthetic: "true"`, and `validation: "synthetic"` on each
 party). See [`CONSENT.md`](CONSENT.md). vCons conform to IETF
 `draft-ietf-vcon-vcon-core-02` (syntax `0.4.0`) and are built with the official
-`vcon` library.
+`vcon` library (0.9.6+).
 
 ## Features
 
 - Generates conversations from editable prompts (voice or text messaging)
+- Structured LLM output (JSON schema / tool use) keeps agent and customer names consistent
+- LLM providers: **OpenAI**, **Anthropic Claude**, or offline **`scripted`**
 - Synthesizes per-turn audio via OpenAI text-to-speech (voice calls)
-- Builds spec-compliant vCons with transcript/summary analysis and synthetic-data governance
+- Optional **Whisper round-trip** on synthesized audio for real recognizer confidence
+- Builds spec-compliant vCons with WTF transcription analysis and synthetic-data governance
 - Writes output locally or to S3
 - Three front ends over one engine: Streamlit UI, CLI, and a FastAPI service
-- An offline `scripted` provider needs no API key (great for tests and demos)
+- Concurrent batch generation via `--concurrency` / API `concurrency` field
 
 ## Architecture
 
 Generation logic lives in the `vconfaker` engine package, independent of Streamlit:
 
 - `vconfaker/config.py` — typed settings from the environment
-- `vconfaker/providers/` — LLM (`scripted` | `openai`) and TTS providers
+- `vconfaker/schemas/` — Pydantic models for structured dialogue output
+- `vconfaker/providers/` — LLM (`scripted` | `openai` | `anthropic`), TTS, STT
 - `vconfaker/generators/` — scenario + conversation generation (shared prompts)
 - `vconfaker/storage.py` — output sinks (`local` | `s3`)
 - `vconfaker/vconbuild/builder.py` — spec-compliant vCon assembly
-- `vconfaker/engine.py` — the `generate_vcon` pipeline shared by every front end
+- `vconfaker/engine.py` — the `generate_vcon` / `generate_many` pipeline
 
 The Streamlit app (`vcon_faker.py`), the CLI (`python -m vconfaker`), and the API
 (`vconfaker/api.py`) are thin clients over the engine. The modernization roadmap
@@ -41,7 +45,7 @@ is in [`MODERNIZATION_PLAN.md`](MODERNIZATION_PLAN.md).
 
 - Python 3.12+
 - Packages from `requirements.txt` (`pip install -r requirements.txt`)
-- For real generation: an OpenAI API key (and AWS credentials + an S3 bucket if using S3 storage)
+- For real generation: an OpenAI and/or Anthropic API key (and AWS credentials + an S3 bucket if using S3 storage)
 
 ## Configuration
 
@@ -49,9 +53,11 @@ The engine reads configuration from the environment (the CLI and API) or from
 Streamlit secrets (the UI). Recognized keys:
 
 ```
-OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TTS_MODEL
+OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TTS_MODEL, WHISPER_MODEL
+ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 AWS_ACCESS_KEY, AWS_SECRET_KEY, S3_BUCKET
 VCONFAKER_LLM_PROVIDER, VCONFAKER_STORAGE, VCONFAKER_OUTPUT_DIR
+VCONFAKER_CONCURRENCY, VCONFAKER_WHISPER
 ```
 
 For the Streamlit UI, copy `.streamlit/secrets.toml.example` to
@@ -75,8 +81,14 @@ click "Generate Conversation(s)".
 # Fully offline + deterministic; writes vCons under ./out
 python -m vconfaker generate --provider scripted --type voice --count 5
 
-# Real OpenAI generation with audio, uploaded to S3
-python -m vconfaker generate --provider openai --storage s3 --count 100 --audio
+# OpenAI with audio uploaded to S3, four workers in parallel
+python -m vconfaker generate --provider openai --storage s3 --count 100 --audio --concurrency 4
+
+# Claude-authored dialogue
+python -m vconfaker generate --provider anthropic --count 10
+
+# Whisper STT round-trip on synthesized audio (real recognizer confidence)
+python -m vconfaker generate --provider openai --audio --whisper --count 5
 ```
 
 ### API
@@ -84,7 +96,7 @@ python -m vconfaker generate --provider openai --storage s3 --count 100 --audio
 ```
 uvicorn vconfaker.api:app
 # GET  /healthz
-# POST /generate  {"count": 2, "conversation_type": "voice", "provider": "openai"}
+# POST /generate  {"count": 2, "conversation_type": "voice", "provider": "anthropic", "concurrency": 4}
 ```
 
 ## Development
@@ -116,6 +128,7 @@ Open-source under the [MIT License](LICENSE).
 ## Acknowledgements
 
 - [OpenAI](https://openai.com/) for the language and text-to-speech models.
+- [Anthropic](https://www.anthropic.com/) for Claude dialogue generation.
 - [Streamlit](https://streamlit.io/) for the web interface.
 - [Amazon Web Services](https://aws.amazon.com/) for S3 storage.
 

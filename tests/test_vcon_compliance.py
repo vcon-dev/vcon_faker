@@ -161,14 +161,16 @@ def test_json_round_trip_revalidates(build):
 
 def test_voice_transcript_is_a_wtf_document():
     d = _voice_with_audio().to_dict()
-    transcripts = [a for a in d["analysis"] if a["type"] == "transcript"]
+    transcripts = [a for a in d["analysis"] if a["type"] in ("transcript", "transcription")]
     assert len(transcripts) == 1
     t = transcripts[0]
     assert t["encoding"] == "json"
     assert "wtf" in t["schema"].lower()
+    assert t.get("vendor")
     body = json.loads(t["body"])
     assert body["transcript"]["text"]
     assert body["segments"]
+    assert "wtf_transcription" in d.get("extensions", [])
 
 
 def test_empty_conversation_raises():

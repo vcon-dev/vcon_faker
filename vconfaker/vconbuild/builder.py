@@ -208,6 +208,7 @@ def build_vcon(
     audio_duration: float = 0.0,
     chat_model: str | None = None,
     tts_model: str | None = None,
+    wtf_document: dict[str, Any] | None = None,
     validate: bool = True,
 ) -> Vcon:
     """Assemble a spec-compliant, synthetic-marked vCon and return it.
@@ -224,6 +225,8 @@ def build_vcon(
             ``audio_content_hash`` must already be in ``sha512-<base64url>`` form
             (see ``sha512_base64url``).
         chat_model/tts_model: Recorded for provenance in analysis/WTF metadata.
+        wtf_document: Optional pre-built WTF payload (``transcript``, ``segments``,
+            ``metadata``) from an STT round-trip; defaults to source-text WTF.
         validate: Run ``Vcon.is_valid`` and raise ``ValueError`` on failure.
 
     Returns:
@@ -327,21 +330,18 @@ def build_vcon(
                 )
             )
             # Transcript carried as a WTF document in analysis[].
-            wtf = _build_wtf_document(
+            wtf = wtf_document or _build_wtf_document(
                 turns,
                 audio_duration,
                 provider=SYNTHETIC_VENDOR,
                 model=tts_model or "unknown",
                 created_at=start_iso,
             )
-            v.add_analysis(
-                type="transcript",
-                dialog=0,
-                vendor=SYNTHETIC_VENDOR,
-                product=tts_model or chat_model or "unknown",
-                body=json.dumps(wtf),
-                encoding="json",
-                schema=WTF_SCHEMA_URL,
+            v.add_wtf_transcription_analysis(
+                transcript=wtf["transcript"],
+                segments=wtf["segments"],
+                metadata=wtf["metadata"],
+                dialog_index=0,
             )
         else:
             # No audio: keep the conversation inline as a single text dialog.
@@ -402,3 +402,18 @@ def build_vcon(
             raise ValueError(f"Invalid vCon object: {errors}")
 
     return v
+
+
+def build_wtf_from_turns(
+    turns: list[Turn],
+    duration: float,
+    *,
+    provider: str,
+    model: str,
+    created_at: str,
+    language: str = "en",
+) -> dict[str, Any]:
+    """Build a WTF document from authored turns (public helper for STT providers)."""
+    return _build_wtf_document(
+        turns, duration, provider=provider, model=model, created_at=created_at, language=language
+    )

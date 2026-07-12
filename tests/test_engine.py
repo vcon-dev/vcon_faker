@@ -11,6 +11,7 @@ from vconfaker.config import Settings
 from vconfaker.generators.conversation import build_prompt, generate_conversation
 from vconfaker.models import ConversationSpec
 from vconfaker.providers.llm import (
+    AnthropicProvider,
     OpenAIProvider,
     ScriptedProvider,
     get_provider,
@@ -76,6 +77,18 @@ def test_get_provider_openai_requires_key():
 
 def test_get_provider_openai_with_key():
     assert isinstance(get_provider(Settings(openai_api_key="sk-x")), OpenAIProvider)
+
+
+def test_get_provider_anthropic_requires_key():
+    with pytest.raises(ValueError):
+        get_provider(Settings(llm_provider="anthropic", anthropic_api_key=None))
+
+
+def test_get_provider_anthropic_with_key():
+    assert isinstance(
+        get_provider(Settings(llm_provider="anthropic", anthropic_api_key="sk-ant-x")),
+        AnthropicProvider,
+    )
 
 
 def test_get_provider_unknown_name():
