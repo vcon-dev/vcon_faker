@@ -9,7 +9,7 @@ import jsonschema
 import pytest
 
 import vcon_faker
-from vcon import Vcon
+from vcon import Vcon, compute_content_hash
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "appendix-c-json-schema.json")
 with open(SCHEMA_PATH) as f:
@@ -34,7 +34,7 @@ def _build(kind, audio, i):
         customer_email="customer@example.com",
         url="https://example.com/a.wav" if audio else None,
         filename="a.wav" if audio else None,
-        signature="sha512-abc" if audio else None,
+        signature=compute_content_hash(b"fake audio") if audio else None,
         audio_duration=12.5 if audio else 0,
         business_name="Example Co",
         business="retail",
