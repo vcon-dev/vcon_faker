@@ -9,6 +9,7 @@ import jsonschema
 import pytest
 
 import vcon_faker
+from vcon import Vcon
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "appendix-c-json-schema.json")
 with open(SCHEMA_PATH) as f:
@@ -55,6 +56,9 @@ CASES = [(k, a, i) for i in range(N) for k, a in
 def test_generated_vcon_matches_schema(kind, audio, i):
     d = _build(kind, audio, i).to_dict()
     jsonschema.validate(d, SCHEMA)
+    ref = Vcon(json.loads(json.dumps(d)))
+    assert ref.is_valid() == (True, [])
+    assert ref.get_validation_warnings() == []
     assert d["vcon"] == "0.5.0"
     assert len(d["sessions"]) == 1
     session = d["sessions"][0]

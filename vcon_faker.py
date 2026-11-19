@@ -389,7 +389,7 @@ def create_vcon_object(
             "type": "transcript",
             "dialog": dialog_index,
             "vendor": "deepgram" if generate_audio else "text",
-            # core-05 requires a transcript body to be a string
+            # core-05: with encoding "none" the body must be a string
             "body": transcript_text,
             "encoding": "none",
             "meta": {"confidence": 0.99, "detected_language": "en"}
