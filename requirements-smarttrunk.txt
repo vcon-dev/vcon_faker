@@ -1,0 +1,19 @@
+# The Smart Trunk call mode (python -m vconfaker.smarttrunk), in its own venv on Apple silicon.
+# The Streamlit app's requirements.txt is not needed for it.
+#
+#   uv venv --python 3.12 ~/.smarttrunk-synth/venv
+#   uv pip install --python ~/.smarttrunk-synth/venv/bin/python -r requirements-smarttrunk.txt
+#
+# Speech recognition uses the parakeet-mlx command line, installed separately:
+#   uv tool install parakeet-mlx
+# ffmpeg and ffprobe must be on PATH (brew install ffmpeg).
+vcon>=1.0.3,<2
+anthropic>=2.13
+mlx-audio>=0.6.7
+misaki[en]>=0.9
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+soundfile>=0.12
+numpy>=1.26
+psutil>=5.9
+jsonschema>=4.21
+pytest>=8

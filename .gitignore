@@ -8,3 +8,4 @@ venv
 .venv*/
 .omc/
 !tests/appendix-c-json-schema.json
+!vconfaker/smarttrunk/packs/*.json
