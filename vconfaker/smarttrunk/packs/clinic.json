@@ -1,0 +1,89 @@
+{
+  "industry": "clinic",
+  "version": "clinic-v1",
+  "label": "Medical and dental clinics",
+  "timezone": "America/New_York",
+  "open_days": [0, 1, 2, 3, 4],
+  "notice": {
+    "file": "synthetic-notice-v1",
+    "text": "This call is recorded and transcribed. You can ask the business for a copy of your recording.",
+    "discloses": ["recording", "transcription"]
+  },
+  "caller_area_codes": ["216", "303", "405", "608", "804", "971"],
+  "caller_context": {
+    "template": "They are {item}.",
+    "items": ["an established patient", "a new patient", "a parent calling about their child", "calling for an elderly parent who is a patient", "an established patient who has not been in for a while", "a patient who just changed jobs and insurance"]
+  },
+  "products_label": "What the practice offers",
+  "writer_rules": "Keep health details mild and everyday: a cough, a fever, a checkup, a toothache, a medicine the caller takes for blood pressure. No diagnoses beyond everyday ones, no medicine brand names or doses, no test values. Staff never give results or medical advice over the phone. Insurance is only ever 'your insurance' or 'your plan'. If anything sounds urgent, the staff member says to call 911 or go to the emergency room, and the call moves on.",
+  "reject_places": false,
+  "businesses": [
+    {
+      "id": "brisbeck", "name": "Brisbeck Family Medicine", "description": "a family medicine practice", "area_code": "608",
+      "products": ["annual physicals", "sick visits", "flu shots", "school and sports physicals", "lab draws"],
+      "hours": "Monday to Friday, 8 AM to 5 PM",
+      "ivr": "Thank you for calling Brisbeck Family Medicine. For appointments and prescriptions, press one. For billing, press two.",
+      "lines": {"front_desk": {"number": "555-0112", "screen": true, "ivr_key": "1"}, "billing": {"number": "555-0113", "screen": false, "ivr_key": "2"}}
+    },
+    {
+      "id": "wendlow", "name": "Wendlow Dental Care", "description": "a general dentistry practice", "area_code": "303",
+      "products": ["cleanings and checkups", "fillings", "crowns", "whitening", "same-week emergency visits"],
+      "hours": "Monday to Friday, 8 AM to 5 PM",
+      "lines": {"front_desk": {"number": "555-0122", "screen": true}, "billing": {"number": "555-0123", "screen": false}}
+    },
+    {
+      "id": "orrinvale", "name": "Orrinvale Pediatrics", "description": "a pediatric practice", "area_code": "804",
+      "products": ["well-child visits", "sick visits", "vaccines", "sports physicals", "newborn checkups"],
+      "hours": "Monday to Friday, 8 AM to 5 PM",
+      "lines": {"front_desk": {"number": "555-0132", "screen": false}, "billing": {"number": "555-0133", "screen": false}}
+    },
+    {
+      "id": "kestlemoor", "name": "Kestlemoor Dental Studio", "description": "a family dental practice", "area_code": "405",
+      "products": ["cleanings and checkups", "fillings", "night guards", "kids' dentistry", "same-week emergency visits"],
+      "hours": "Monday to Friday, 8 AM to 5 PM",
+      "lines": {"front_desk": {"number": "555-0142", "screen": true}, "billing": {"number": "555-0143", "screen": false}}
+    }
+  ],
+  "scenarios": [
+    {"id": "new_patient", "label": "New patient appointment", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist", "people": ["provider"],
+     "brief": "A new patient asks to book a first visit. The receptionist asks what the visit is for and whether they have insurance, offers a later day with the provider named under People, and asks them to arrive early for paperwork."},
+    {"id": "reschedule", "label": "Reschedule or cancel", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist", "people": ["provider"],
+     "brief": "The caller needs to move or cancel an upcoming appointment with the provider named under People. The receptionist finds it and offers another later day, or cancels it."},
+    {"id": "refill", "label": "Prescription refill", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist", "people": ["provider"], "transfer_to": "nurse",
+     "businesses": ["brisbeck", "orrinvale"],
+     "brief": "The caller asks for a refill of a medicine they take regularly, described generically. The receptionist takes the pharmacy only as 'your usual pharmacy', sends the request to the provider, and says when to expect it; a transfer, if any, goes to the nurse."},
+    {"id": "results", "label": "Test results question", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist", "people": ["provider"], "transfer_to": "nurse",
+     "businesses": ["brisbeck", "orrinvale"],
+     "brief": "The caller asks whether their lab results are back. Staff can't read results over the phone; they say the provider will review them and the nurse will call back, or the results will show in the patient portal."},
+    {"id": "sick_visit", "label": "Same-day sick visit", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist", "people": ["provider"],
+     "businesses": ["brisbeck", "orrinvale"],
+     "brief": "A parent or patient calls about a mild illness (a cough, a low fever, an earache) and asks to be seen. The receptionist asks a couple of screening questions and books the next open slot later that day or the next morning."},
+    {"id": "cleaning", "label": "Cleaning and checkup", "kind": "conversation", "line": "front_desk", "agent_role": "dental receptionist", "people": ["provider"],
+     "businesses": ["wendlow", "kestlemoor"],
+     "brief": "The caller wants to book a cleaning and checkup. The receptionist checks when they were last in, offers later days, and mentions any x-rays that are due."},
+    {"id": "toothache", "label": "Toothache", "kind": "conversation", "line": "front_desk", "agent_role": "dental receptionist", "people": ["provider"], "transfer_to": "dental hygienist",
+     "businesses": ["wendlow", "kestlemoor"],
+     "brief": "The caller has a toothache or a chipped tooth and asks to be seen soon. The receptionist asks how bad it is and books the first emergency slot, later that day or the next morning."},
+    {"id": "billing", "label": "Billing question", "kind": "conversation", "line": "billing", "agent_role": "billing specialist", "transfer_to": "billing manager",
+     "brief": "The caller has a question about a statement: a charge they don't understand, or what their insurance paid. The billing specialist explains in plain terms and offers a payment plan or to resubmit to the insurance."},
+    {"id": "recording_copy", "label": "Recording request: copy", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist",
+     "brief": "After the recording notice, the caller asks why calls are recorded, who can hear them, and how to get a copy of their recording. The receptionist explains plainly and passes the request to the office manager."},
+    {"id": "recording_delete", "label": "Recording request: deletion", "kind": "conversation", "line": "front_desk", "agent_role": "receptionist",
+     "brief": "The caller is uncomfortable that the call is recorded and asks for the recording to be deleted. The receptionist notes the request for the office manager, promises nothing they cannot do, and asks whether the caller still needs help."},
+    {"id": "hangup", "label": "Hang-up on hold", "kind": "hangup", "line": "front_desk", "agent_role": "receptionist",
+     "brief": "The caller starts asking for an appointment, the receptionist asks them to hold, and the caller hangs up after waiting, saying they will call back later."},
+    {"id": "robocall", "label": "Screened robocall", "kind": "robocall", "line": "front_desk", "agent_role": "receptionist",
+     "brief": "An automated prerecorded pitch calls the front desk, offering a generic medical supply discount that names no company. The receptionist answers; the call is cut off by the line's screening announcement."},
+    {"id": "wrong_number", "label": "Wrong number", "kind": "wrong_number", "line": "front_desk", "agent_role": "receptionist", "people": ["asked_for"],
+     "brief": "The caller meant to reach someone else (the person named under People, or a kind of business, never a named one). The receptionist says it's the wrong number, and the call ends quickly."},
+    {"id": "after_hours", "label": "After hours", "kind": "conversation", "line": "front_desk", "agent_role": "after-hours answering service attendant", "after_hours": true,
+     "brief": "The call comes in after the practice has closed and is answered by its answering service. The attendant says to call 911 for an emergency, takes the caller's name, callback number and reason, and says the office will call back when it opens or the on-call provider will call if it can't wait."},
+    {"id": "voicemail", "label": "Voicemail", "kind": "voicemail", "line": "billing", "agent_role": "billing specialist",
+     "brief": "No one picks up. The first business turn is the billing office's recorded voicemail greeting. The caller leaves a message with their name, the patient's name if different, the question, and a callback number."}
+  ],
+  "mix": {
+    "new_patient": 5, "reschedule": 5, "refill": 4, "results": 3, "sick_visit": 4, "cleaning": 4, "toothache": 3, "billing": 4,
+    "recording_copy": 2, "recording_delete": 2, "hangup": 3, "robocall": 2, "wrong_number": 3, "after_hours": 3, "voicemail": 3
+  },
+  "screen": {"announce": "We can't take this call on this line. Goodbye."}
+}

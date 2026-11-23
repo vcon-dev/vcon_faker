@@ -1,0 +1,78 @@
+{
+  "industry": "home_services",
+  "version": "home_services-v1",
+  "label": "Home services",
+  "timezone": "America/New_York",
+  "open_days": [0, 1, 2, 3, 4, 5],
+  "notice": {
+    "file": "synthetic-notice-v1",
+    "text": "This call is recorded and transcribed. You can ask the business for a copy of your recording.",
+    "discloses": ["recording", "transcription"]
+  },
+  "caller_area_codes": ["210", "317", "502", "615", "704", "813"],
+  "caller_context": {
+    "template": "Their home has {item}.",
+    "items": ["a gas furnace about fifteen years old", "a heat pump put in a few years ago", "an older water heater in the basement", "a crawl space under the kitchen", "an older electrical panel in the garage", "a big backyard with a fence", "a finished basement", "central air that is ten years old"]
+  },
+  "products_label": "What the business does",
+  "writer_rules": "Name no equipment brand and no other company: say 'the furnace', 'the water heater', 'the panel'. Prices are rough ranges, never exact quotes. Nothing dangerous is described in detail; for a gas smell the staff member tells the caller to leave the house and call the gas utility's emergency line or 911, and the call moves on.",
+  "reject_places": false,
+  "businesses": [
+    {
+      "id": "corrowell", "name": "Corrowell Plumbing and Drain", "description": "a residential plumbing company", "area_code": "317",
+      "products": ["drain cleaning", "water heater replacement", "leak repair", "sump pump installs", "toilet and faucet repair"],
+      "hours": "Monday to Saturday, 7 AM to 6 PM",
+      "lines": {"dispatch": {"number": "555-0116", "screen": true}, "office": {"number": "555-0117", "screen": false}}
+    },
+    {
+      "id": "hethridge", "name": "Hethridge Heating and Air", "description": "a heating and air conditioning company", "area_code": "615",
+      "products": ["furnace repair", "AC tune-ups", "heat pump installs", "maintenance plans", "duct cleaning"],
+      "hours": "Monday to Saturday, 7 AM to 6 PM",
+      "ivr": "Thanks for calling Hethridge Heating and Air. To schedule service, press one. For estimates and billing, press two.",
+      "lines": {"dispatch": {"number": "555-0126", "screen": true, "ivr_key": "1"}, "office": {"number": "555-0127", "screen": false, "ivr_key": "2"}}
+    },
+    {
+      "id": "ambervane", "name": "Ambervane Electric", "description": "a residential electrician", "area_code": "502",
+      "products": ["panel upgrades", "EV charger installs", "outlet and lighting repair", "generator hookups", "ceiling fan installs"],
+      "hours": "Monday to Saturday, 7 AM to 6 PM",
+      "lines": {"dispatch": {"number": "555-0136", "screen": false}, "office": {"number": "555-0137", "screen": false}}
+    },
+    {
+      "id": "tollisford", "name": "Tollisford Pest and Lawn", "description": "a pest control and lawn care company", "area_code": "704",
+      "products": ["ant and spider treatments", "termite inspections", "mosquito service", "lawn fertilization", "rodent exclusion"],
+      "hours": "Monday to Saturday, 7 AM to 6 PM",
+      "lines": {"dispatch": {"number": "555-0146", "screen": true}, "office": {"number": "555-0147", "screen": false}}
+    }
+  ],
+  "scenarios": [
+    {"id": "service_request", "label": "Service request", "kind": "conversation", "line": "dispatch", "agent_role": "dispatcher", "transfer_to": "service manager",
+     "brief": "The caller has a problem at home that fits the business (a slow drain, no heat, a dead outlet, ants in the kitchen) and wants someone out. The dispatcher asks a few questions, gives the trip fee in rough terms, and books an arrival window on a later day."},
+    {"id": "estimate", "label": "Estimate request", "kind": "conversation", "line": "office", "agent_role": "office coordinator", "transfer_to": "estimator",
+     "brief": "The caller wants an estimate for a bigger job (a new water heater, a heat pump, a panel upgrade, a termite treatment). The coordinator asks about the home and books a free estimate visit on a later day."},
+    {"id": "reschedule", "label": "Reschedule a visit", "kind": "conversation", "line": "dispatch", "agent_role": "dispatcher",
+     "brief": "The caller needs to move an upcoming service visit. The dispatcher finds it and offers another arrival window on a later day."},
+    {"id": "callback", "label": "Problem came back", "kind": "conversation", "line": "dispatch", "agent_role": "dispatcher", "transfer_to": "service manager",
+     "brief": "The problem the business fixed last week has come back. The caller is annoyed but polite. The dispatcher apologizes, checks the job, and books a return visit at no charge under the work guarantee."},
+    {"id": "billing", "label": "Billing question", "kind": "conversation", "line": "office", "agent_role": "office coordinator",
+     "brief": "The caller has a question about an invoice: a line they don't understand, or a payment that hasn't shown up. The coordinator explains and fixes it or promises a corrected invoice."},
+    {"id": "recording_copy", "label": "Recording request: copy", "kind": "conversation", "line": "office", "agent_role": "office coordinator",
+     "brief": "After the recording notice, the caller asks why calls are recorded, who can hear them, and how to get a copy of their recording. The coordinator explains plainly and passes the request to the office manager."},
+    {"id": "recording_delete", "label": "Recording request: deletion", "kind": "conversation", "line": "dispatch", "agent_role": "dispatcher",
+     "brief": "The caller is uncomfortable that the call is recorded and asks for the recording to be deleted. The dispatcher notes the request for the office manager, promises nothing they cannot do, and asks whether the caller still needs service."},
+    {"id": "hangup", "label": "Hang-up on hold", "kind": "hangup", "line": "dispatch", "agent_role": "dispatcher",
+     "brief": "The caller starts describing a problem, the dispatcher asks them to hold, and the caller hangs up after waiting, saying they'll find someone else."},
+    {"id": "robocall", "label": "Screened robocall", "kind": "robocall", "line": "dispatch", "agent_role": "dispatcher",
+     "brief": "An automated prerecorded pitch calls the dispatch line, offering generic business lead generation that names no company. The dispatcher answers; the call is cut off by the line's screening announcement."},
+    {"id": "wrong_number", "label": "Wrong number", "kind": "wrong_number", "line": "office", "agent_role": "office coordinator", "people": ["asked_for"],
+     "brief": "The caller meant to reach someone else (the person named under People, or a kind of business, never a named one). The coordinator says it's the wrong number, and the call ends quickly."},
+    {"id": "after_hours", "label": "After-hours emergency", "kind": "conversation", "line": "dispatch", "agent_role": "after-hours answering service attendant", "after_hours": true,
+     "brief": "The call comes in after the business has closed and is answered by its answering service: a pipe has burst, the heat is out on a cold night, or a breaker keeps tripping. The attendant takes the address only as 'the address on file', a callback number and the problem, and says the on-call technician will call back within the hour."},
+    {"id": "voicemail", "label": "Voicemail", "kind": "voicemail", "line": "office", "agent_role": "office coordinator",
+     "brief": "No one picks up. The first business turn is the office's recorded voicemail greeting. The caller leaves a message with their name, the problem or question and a callback number."}
+  ],
+  "mix": {
+    "service_request": 10, "estimate": 7, "reschedule": 5, "callback": 4, "billing": 4, "recording_copy": 2,
+    "recording_delete": 2, "hangup": 3, "robocall": 2, "wrong_number": 4, "after_hours": 4, "voicemail": 3
+  },
+  "screen": {"announce": "We can't take this call on this line. Goodbye."}
+}

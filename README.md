@@ -75,40 +75,52 @@ Before running the script, ensure you have the following:
 
 `python -m vconfaker.smarttrunk` makes synthetic phone calls in Smart Trunk's call shape: a
 caller phones an invented business on its Smart Trunk number and is forwarded. Each call is a
-vCon (syntax `0.5.0`) with the recording notice at the start of the recording, the notice
-evidence as tags, the recording as an external MP3 with its `content_hash`, a transcript, and,
-on numbers that screen calls, a screening outcome. Every vCon carries the three synthetic
-markers described in [CONSENT.md](CONSENT.md).
+vCon (syntax `0.5.0`) with a two-channel recording that starts at answer with the recording
+notice, the notice evidence as tags, a transcript per channel, and, on numbers that screen
+calls, a screening outcome. Every vCon carries the three synthetic markers described in
+[CONSENT.md](CONSENT.md).
 
-The stages, one call at a time in one process:
+Four packs in `vconfaker/smarttrunk/packs/`: car dealerships, medical and dental clinics,
+municipal offices, and home services. Each names invented businesses (or towns, with their own
+streets), their lines (555-0100 to 555-0149; callers use 555-0150 to 555-0199), the scenarios
+and their mix. Every pack has calls about a recording (a copy, or a deletion), hang-ups,
+wrong numbers, a screened robocall, after hours and voicemail. Calls vary in how they open and
+how long they run (many are 15 to 45 s), and some go through a phone menu, are transferred to a
+colleague, or have interruptions.
 
-1. **Scenario pack.** `vconfaker/smarttrunk/packs/<industry>.json` names invented businesses,
-   their lines (numbers only in 555-0100 to 555-0199), the scenarios and the mix. The dealership
-   pack covers sales, service, recalls, trade-ins, parts, a caller asking for a copy or deletion
-   of their recording, a hang-up, a screened robocall, after hours and voicemail.
-2. **Script.** Claude (`claude-sonnet-5-5`, structured output) writes each call from a brief.
-   A script that names a person or business it was not given, a real company, an email or web
-   address, or a number outside the fictional range is thrown away and written again.
-3. **Voices.** Kokoro-82M through mlx-audio, on the machine, one voice per speaker.
-4. **Phone audio.** ffmpeg: ringback, the notice, telephone band, light line noise, G.711 at
-   8 kHz mono, then MP3.
-5. **Check.** parakeet-mlx transcribes every call; a call whose word error rate against the
-   script is over 20% is spoken again with other voices. The recognizer's transcript, not the
-   script, goes into the vCon.
-6. **vCon.** Built with vcon-lib and validated with vcon-lib, the core-05 JSON schema in
+The stages, in one process:
+
+1. **Script.** Claude (`claude-sonnet-5-5`, structured output) writes each call from a brief. A
+   script is thrown away and written again if it names a person, business or place it was not
+   given, a real company from the industry's block list (`REAL_NAMES` in `hygiene.py`), an
+   email or web address, or a number outside the fictional range, or if it books something for
+   the moment of the call.
+2. **Voices.** Kokoro-82M through mlx-audio, on the machine, one voice per speaker.
+3. **Phone audio.** ffmpeg: the notice at answer, any phone menu and key tone, hold music on
+   holds, telephone band, light line noise, G.711 at 8 kHz, a stereo MP3 with the caller on the
+   left channel and the business side on the right.
+4. **Check.** Kokoro is released, then parakeet-mlx transcribes each channel's speech. A call
+   fails if its word error rate is over 20%, if any line of three words or more was not heard,
+   or if a number outside the fictional range comes out; it is voiced again with other voices.
+   The recognizer's transcript, not the script, goes into the vCon.
+5. **vCon.** Built with vcon-lib and validated with vcon-lib, the core-05 JSON schema in
    `tests/` and the governance check.
 
 Set up a venv from `requirements-smarttrunk.txt` (Apple silicon), install `parakeet-mlx` and
 ffmpeg, then from the repo root:
 
 ```
-python -m vconfaker.smarttrunk --industry dealership --count 20 --out ~/synthetic-calls/run-1
+python -m vconfaker.smarttrunk --industry clinic --count 50 --out ~/synthetic-calls/v1/clinic \
+    --corpus-root ~/synthetic-calls/v1 --usage-file ~/synthetic-calls/v1/api_usage.json --max-cost-usd 5
 ```
 
 The output folder holds `vcons/`, `audio/`, `scripts/`, `transcripts/`, `manifest.json` (timings,
-memory, token use and estimated cost) and an `index.html` to listen to each call. Keep it outside
-the repo. The MP3 URLs in the vCons use `--media-base-url`; whatever publishes the audio sets the
-real one, and the `content_hash` lets it check the file. Offline tests: `pytest tests/test_smarttrunk.py`.
+memory, token use and estimated cost) and an `index.html` to listen to each call;
+`--corpus-root` also writes an overall `index.html` over every industry folder. Keep it outside
+the repo. The run pauses while free memory is under `--min-free-mb` (2048), and stops writing
+scripts once the shared usage file reaches `--max-cost-usd`. The MP3 URLs in the vCons use
+`--media-base-url`; whatever publishes the audio sets the real one, and the `content_hash` lets
+it check the file. Offline tests: `pytest tests/test_smarttrunk.py`.
 
 ## License
 

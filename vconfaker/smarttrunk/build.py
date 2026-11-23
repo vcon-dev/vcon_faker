@@ -4,12 +4,14 @@ The shape follows what the carrier adapters in ``vcon-dev/vcon-telephony-adapter
 forwarded call through the Smart Trunk receiver:
 
 * party 0 is the caller, party 1 the business's Smart Trunk number;
-* one Session for the call, both parties on it; a ``recording`` Dialog with both parties as
-  contributors, an external MP3 by ``url`` with its ``content_hash``;
-* ``join`` and ``drop`` Events for each party;
-* ``tags`` carrying the call's timing and the receiver's notice evidence under the
-  ``annotation_*`` names the receiver sends (the notice file, its SHA-256, what it discloses,
-  when it was served);
+* one Session for the call, from the dial, both parties on it; a two-channel ``recording``
+  Dialog from the answer (channel 0 the caller, channel 1 the business side, so ``parties`` is
+  ``[0, 1]`` with one entry per channel), an external MP3 by ``url`` with its ``content_hash``;
+* ``join`` and ``drop`` Events for each party, and ``keydown``/``keyup`` for a phone-menu key;
+* ``tags`` carrying the call's timing, ``recording_channels:dual`` as the adapters write it, the
+  receiver's notice evidence under the ``annotation_*`` names it sends (the notice file, its
+  SHA-256, what it discloses, when it was served), and what varies about the call (opening,
+  length, menu, transfer, interruptions);
 * a ``transcript`` analysis entry, and a ``voice-screen`` entry on numbers that screen calls.
 
 What it does not copy: no ``tenant`` attachment (the loader that puts a corpus into a staging
@@ -46,20 +48,20 @@ def _iso(t: datetime) -> str:
     return t.astimezone(UTC).isoformat(timespec="milliseconds")
 
 
-def screen_result(plan: CallPlan, t0: datetime, layout: Any, rng: random.Random) -> dict[str, Any] | None:
+def screen_result(plan: CallPlan, answered: datetime, layout: Any, rng: random.Random) -> dict[str, Any] | None:
     """The screening outcome for a screened number: clean for a person, acted for the robocall."""
     if not plan.screened:
         return None
     base = {"status": "clean", "mode": "listen", "threshold": 0.5, "windows": 2, "frames": 8, "synthetic_frames": 0}
     if plan.kind == "robocall":
-        start, end = layout.turns[-1]
-        decided = t0 + timedelta(seconds=max(start + 3.0, end - 1.0))
+        _, start, end = layout.turns[-1]
+        decided = answered + timedelta(seconds=max(start + 3.0, end - 1.0))
         return {
             **base, "status": "acted", "synthetic_frames": 6, "max_confidence": round(rng.uniform(0.9, 0.99), 2),
             "decided_at": _iso(decided), "action": "announce", "action_result": "accepted",
             "acted_at": _iso(decided + timedelta(seconds=0.4)), "telnyx_status": 200,
         }
-    decided = t0 + timedelta(seconds=layout.answered_at + 8.0)
+    decided = answered + timedelta(seconds=layout.notice_seconds + 8.0)
     return {
         **base, "max_confidence": round(rng.uniform(0.02, 0.2), 2), "decided_at": _iso(decided),
         "action": None, "action_result": None, "acted_at": None, "telnyx_status": None,
@@ -79,16 +81,24 @@ def build_call_vcon(
     notice: dict[str, Any],
     screen: dict[str, Any] | None,
     run_label: str,
+    channels: int = 2,
 ) -> Vcon:
-    t0 = plan.start
-    at = lambda seconds: _iso(t0 + timedelta(seconds=seconds))  # noqa: E731
+    """The call's vCon. ``plan.start`` is when the caller dialled; the recording starts at answer,
+    ``layout.ring_seconds`` later, and every layout time counts from the answer."""
+    dialled = plan.start
+    answered = dialled + timedelta(seconds=layout.ring_seconds)
+    at = lambda seconds: _iso(answered + timedelta(seconds=seconds))  # noqa: E731
     ended = layout.ended_at
 
     v = Vcon.build_new(created_at=at(ended + 5.0))
     v.add_party(Party(tel=plan.caller_tel, name=plan.caller.name) if plan.caller.name else Party(tel=plan.caller_tel))
     v.add_party(Party(tel=plan.business_tel, name=plan.business["name"]))
 
-    session = v.add_session(Session(start=at(0), duration=round(ended, 3), parties=[0, 1]))
+    session = v.add_session(
+        Session(start=_iso(dialled), duration=round(layout.ring_seconds + ended, 3), parties=[0, 1])
+    )
+    # Two channels: channel 0 is party 0 (the caller), channel 1 is party 1 (the business side).
+    # Core-05: a multi-channel recording's parties has one entry per channel.
     v.add_dialog(
         Dialog(
             type="recording",
@@ -103,8 +113,11 @@ def build_call_vcon(
         session=session,
     )
 
-    v.add_event(Event(type="join", time=at(0), sessions=session, party=0))
-    v.add_event(Event(type="join", time=at(layout.answered_at), sessions=session, party=1))
+    v.add_event(Event(type="join", time=_iso(dialled), sessions=session, party=0))
+    v.add_event(Event(type="join", time=at(0), sessions=session, party=1))
+    if layout.key_at is not None and layout.key:
+        v.add_event(Event(type="keydown", time=at(layout.key_at), sessions=session, party=0, button=layout.key))
+        v.add_event(Event(type="keyup", time=at(layout.key_at + 0.18), sessions=session, party=0, button=layout.key))
     caller_drop = layout.caller_dropped_at if layout.caller_dropped_at is not None else ended
     v.add_event(Event(type="drop", time=at(caller_drop), sessions=session, party=0))
     v.add_event(Event(type="drop", time=at(ended), sessions=session, party=1))
@@ -115,7 +128,10 @@ def build_call_vcon(
         vendor="parakeet-mlx",
         product=transcript_model(),
         encoding="json",
-        body={"text": transcript.text, "language": "en", "duration": duration, "segments": transcript.sentences},
+        body={
+            "text": transcript.text, "language": "en", "duration": duration, "channels": channels,
+            "segments": transcript.sentences,
+        },
     )
     if screen is not None:
         v.add_analysis(dialog=0, encoding="json", body=screen, **SCREEN)
@@ -127,22 +143,24 @@ def build_call_vcon(
         "industry": pack["industry"],
         "scenario": plan.scenario["id"],
         "call_id": plan.call_id,
-        "call_initiated_at": at(0),
+        "recording_channels": "dual" if channels == 2 else "mono",
+        "call_initiated_at": _iso(dialled),
         "recording_started_at": at(0),
         "annotation_announcement": notice["file"],
         "annotation_announcement_sha256": notice["sha256"],
         "annotation_discloses": ",".join(notice["discloses"]),
         "annotation_announcement_served_at": at(layout.notice_at),
         "annotation_duration_s": f"{layout.notice_seconds:.1f}",
+        **plan.features(),
     }
     add_synthetic_governance(
         v,
-        at=at(0),
+        at=_iso(dialled),
         session=session,
         tags=tags,
         pipeline_note=(
             "Script written by an LLM from an invented scenario; voices synthesized locally with "
-            "Kokoro-82M; transcript produced by speech recognition on the synthesized audio."
+            "Kokoro-82M; transcript produced by speech recognition on each channel of the synthesized audio."
         ),
     )
     return v

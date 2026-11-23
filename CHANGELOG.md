@@ -2,7 +2,32 @@
 
 ## Unreleased
 
-Smart Trunk call mode (`python -m vconfaker.smarttrunk`), for the Smart Trunk staging corpus.
+### Smart Trunk call mode, scale-up
+
+Four industries, and calls that sound less alike.
+
+- Packs for medical and dental clinics, municipal offices and home services beside dealerships,
+  with invented businesses, towns and streets, and a real-name block list for each industry
+  (hospital systems, pharmacies, insurers; states, cities, agencies and utilities; national
+  service chains and marketplaces). The municipal pack also refuses any place it was not given.
+- Variety: six ways of opening a call, short, medium and long calls (many 15 to 45 s), phone
+  menus with a key press (`keydown`/`keyup` Events), transfers to a colleague after hold music,
+  interruptions, and wrong numbers.
+- Scripts that book something for the moment of the call are thrown away.
+- The recording starts at answer with the notice; the ringback before it sets only the
+  Session's start.
+- Two-channel recordings: caller on channel 0, business side on channel 1, so the recording
+  Dialog's `parties` is `[0, 1]` with one entry per channel, and a `recording_channels:dual`
+  tag as the carrier adapters write it. The transcript keeps each segment's channel and party.
+- The transcript check hears each channel's speech on its own and fails a call when any line of
+  three words or more was not heard, not only on the word error rate.
+- Holds play hold music instead of silence.
+- The run pauses while free memory is under a floor, and stops writing scripts at a spending cap
+  shared by a corpus's runs; an overall index page covers a corpus.
+
+### Smart Trunk call mode
+
+`python -m vconfaker.smarttrunk`, for the Smart Trunk staging corpus.
 
 - Synthetic calls in Smart Trunk's call shape, vCon syntax `0.5.0`: caller and business parties,
   one Session, a `recording` Dialog with an external MP3 and `content_hash`, join and drop Events,

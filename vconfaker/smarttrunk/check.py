@@ -1,12 +1,15 @@
-"""Transcribe each call back with parakeet-mlx and compare it with the script.
+"""Transcribe each call back with parakeet-mlx and compare it with the script, line by line.
 
-The recognizer hears the finished 8 kHz MP3, as a real pipeline would. The word error rate
-against what was meant to be said (the notice, the turns, any screening announcement) decides
-whether the audio is usable: above ``MAX_WER`` the call counts as garbled and is made again with
-other voices. The recognizer's output, not the script, becomes the vCon's transcript.
+The recognizer hears each channel of the finished 8 kHz recording on its own: the caller, and the
+business side with the notice and any menu. A call passes when the word error rate over both
+channels is within ``MAX_WER``, every line of three words or more was heard (at least
+``MIN_TURN_COVERAGE`` of its words, in order), and no phone number outside the fictional range
+came out of the recognizer. Otherwise it is voiced again with other voices. The recognizer's
+output, not the script, becomes the vCon's transcript, with each segment's channel and party.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
@@ -24,6 +27,8 @@ from .hygiene import in_fictional_range, numbers_outside_range
 
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 MAX_WER = 0.20
+MIN_TURN_COVERAGE = 0.5
+MIN_TURN_WORDS = 3
 CLI_CHUNK = 5  # files per plain-CLI process, whose memory grows about 1.5 GB per file
 # What huggingface_hub says when HF_HUB_OFFLINE=1 and the model is not in the local cache.
 _CACHE_MISS = re.compile(
@@ -76,12 +81,80 @@ class Check:
     sentences: list[dict[str, Any]] = field(default_factory=list)
     seconds: float = 0.0
     stray_numbers: list[str] = field(default_factory=list)
+    channel_wer: list[float] = field(default_factory=list)
+    uncovered: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "passed": self.passed, "wer": self.wer, "seconds": round(self.seconds, 2), "max_wer": MAX_WER,
-            "stray_numbers": self.stray_numbers,
+            "passed": self.passed, "wer": self.wer, "channel_wer": self.channel_wer, "seconds": round(self.seconds, 2),
+            "max_wer": MAX_WER, "uncovered_lines": self.uncovered, "stray_numbers": self.stray_numbers,
         }
+
+
+def turn_coverage(items: list[str], heard: str) -> list[float | None]:
+    """For each line meant to be said, the share of its words the recognizer heard, in order.
+
+    The lines are aligned against the transcript as one sequence, so a word heard for one line
+    is not credited to another. Lines under ``MIN_TURN_WORDS`` words get None (not judged).
+    """
+    expected: list[str] = []
+    owner: list[int] = []
+    for k, item in enumerate(items):
+        words = normalise(item)
+        expected += words
+        owner += [k] * len(words)
+    matched = [0] * len(items)
+    matcher = difflib.SequenceMatcher(None, expected, normalise(heard), autojunk=False)
+    for a, _, size in matcher.get_matching_blocks():
+        for j in range(a, a + size):
+            matched[owner[j]] += 1
+    out: list[float | None] = []
+    for k, item in enumerate(items):
+        n = len(normalise(item))
+        out.append(None if n < MIN_TURN_WORDS else round(matched[k] / n, 3))
+    return out
+
+
+def check_call(
+    heard: list[dict[str, Any]], expected: list[list[str]], seconds: float = 0.0, time_maps: list[Any] | None = None
+) -> Check:
+    """One call from the recognizer's output per channel and the lines meant for each channel.
+
+    With ``time_maps`` (from ``telephone.speech_only``) segment times are moved back to call time.
+    """
+    from .telephone import to_call_time
+
+    edits = words = 0.0
+    channel_wer: list[float] = []
+    uncovered: list[str] = []
+    stray: list[str] = []
+    segments: list[dict[str, Any]] = []
+    for channel, (result, items) in enumerate(zip(heard, expected, strict=True)):
+        text = (result.get("text") or "").strip()
+        reference = " ".join(items)
+        wer = word_error_rate(reference, text)
+        n = len(normalise(reference))
+        edits += wer * n
+        words += n
+        channel_wer.append(wer)
+        for item, cover in zip(items, turn_coverage(items, text), strict=True):
+            if cover is not None and cover < MIN_TURN_COVERAGE:
+                uncovered.append(f"channel {channel}: {item[:70]}")
+        stray += stray_numbers(text, reference)
+        for sentence in result.get("sentences") or []:
+            seg = {k: sentence.get(k) for k in ("start", "end", "text", "confidence") if k in sentence}
+            seg["text"] = (seg.get("text") or "").strip()
+            if time_maps:
+                for key in ("start", "end"):
+                    if seg.get(key) is not None:
+                        seg[key] = to_call_time(seg[key], time_maps[channel])
+            seg.update(channel=channel, party=channel)
+            segments.append(seg)
+    segments.sort(key=lambda seg: (seg.get("start") or 0.0, seg["channel"]))
+    total_wer = round(edits / words, 4) if words else 0.0
+    passed = total_wer <= MAX_WER and not uncovered and not stray
+    text = " ".join(seg["text"] for seg in segments if seg["text"])
+    return Check(passed, total_wer, text, segments, seconds, stray, channel_wer, uncovered)
 
 
 class Transcriber:
@@ -165,17 +238,6 @@ class Transcriber:
                 elif line.strip().endswith("maximum resident set size"):
                     self.peak_rss_bytes = max(self.peak_rss_bytes, int(parts[0]))
 
-    def check_many(self, items: list[tuple[Path, str, float]]) -> dict[Path, Check]:
-        """``items`` are (audio, expected text, seconds of audio). One Check per audio file."""
-        t0 = time.monotonic()
-        results = self.transcribe_many([p for p, _, _ in items])
-        share = (time.monotonic() - t0) / max(len(items), 1)
-        checks = {}
-        for path, expected, seconds in items:
-            self.audio_seconds += seconds
-            checks[path] = to_check(results[path], expected, share)
-        return checks
-
 
 RUNNER = """\
 import sys
@@ -226,18 +288,3 @@ def stray_numbers(text: str, expected: str = "") -> list[str]:
         if not in_fictional_range(local[:3], local[3:]) and run not in said:
             stray.append(run)
     return stray
-
-
-def to_check(result: dict[str, Any], expected: str, seconds: float = 0.0) -> Check:
-    """Pass when the word error rate is within ``MAX_WER`` and the transcript carries no number
-    outside the fictional range (it goes into the vCon as is)."""
-    text = (result.get("text") or "").strip()
-    wer = word_error_rate(expected, text)
-    stray = stray_numbers(text, expected)
-    sentences = [
-        {k: s.get(k) for k in ("start", "end", "text", "confidence") if k in s}
-        for s in result.get("sentences") or []
-    ]
-    for s in sentences:
-        s["text"] = (s.get("text") or "").strip()
-    return Check(wer <= MAX_WER and not stray, wer, text, sentences, seconds, stray)
