@@ -28,7 +28,7 @@ def _load_key(path: Path, var: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="vconfaker.smarttrunk", description=__doc__.splitlines()[0])
     ap.add_argument("--industry", default="dealership", help="scenario pack in vconfaker/smarttrunk/packs")
-    ap.add_argument("--count", type=int, default=None, help="calls to make (default: the pack's pilot mix)")
+    ap.add_argument("--count", type=int, default=20, help="calls to make, in the pack's mix")
     ap.add_argument("--out", type=Path, required=True, help="output folder, kept outside any repo")
     ap.add_argument("--seed", type=int, default=20261123)
     ap.add_argument("--run-label", default=None, help="dataset_version tag (default: the output folder's name)")
@@ -38,6 +38,10 @@ def main(argv: list[str] | None = None) -> int:
         help="where the MP3s will be served; the loader that publishes them sets the real one",
     )
     ap.add_argument("--parakeet", default=shutil.which("parakeet-mlx") or "parakeet-mlx")
+    ap.add_argument("--usage-file", type=Path, default=None, help="running token record, shared by a corpus's runs")
+    ap.add_argument("--max-cost-usd", type=float, default=None, help="stop writing scripts once the record reaches this")
+    ap.add_argument("--min-free-mb", type=int, default=2048, help="pause while free memory is under this")
+    ap.add_argument("--corpus-root", type=Path, default=None, help="also write an overall index.html here")
     ap.add_argument("--anthropic-env-file", type=Path, default=None)
     ap.add_argument("--anthropic-env-var", default="ANTHROPIC_API_KEY")
     args = ap.parse_args(argv)
@@ -57,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
             media_base_url=args.media_base_url,
             parakeet=args.parakeet,
             run_label=args.run_label or out.name,
+            usage_file=args.usage_file.expanduser().resolve() if args.usage_file else None,
+            max_cost_usd=args.max_cost_usd,
+            min_free_mb=args.min_free_mb,
+            corpus_root=args.corpus_root.expanduser().resolve() if args.corpus_root else None,
         )
     )
     for key, value in manifest["stats"].items():

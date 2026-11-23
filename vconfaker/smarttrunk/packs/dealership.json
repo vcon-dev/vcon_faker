@@ -1,118 +1,80 @@
 {
   "industry": "dealership",
-  "version": "dealership-v1",
+  "version": "dealership-v2",
   "label": "Car dealerships",
   "timezone": "America/New_York",
+  "open_days": [0, 1, 2, 3, 4, 5],
   "notice": {
     "file": "synthetic-notice-v1",
     "text": "This call is recorded and transcribed. You can ask the business for a copy of your recording.",
     "discloses": ["recording", "transcription"]
   },
   "caller_area_codes": ["312", "404", "512", "614", "702", "919"],
+  "caller_context": {
+    "template": "They own a {year} {item}.",
+    "years": [2014, 2024],
+    "own_products_on": ["service"],
+    "items": ["Chevrolet Equinox", "Nissan Rogue", "Hyundai Tucson", "Kia Sorento", "Jeep Cherokee", "Volkswagen Jetta", "Chevrolet Silverado", "Nissan Altima", "Hyundai Elantra", "Kia Soul"]
+  },
+  "products_label": "Vehicles the dealer sells",
+  "writer_rules": "Vehicle makes and models are fine, but only the ones in the brief. Do not state facts about real vehicles (defects, ratings, exact prices); prices are rough. A VIN is only ever its last six characters.",
+  "reject_places": false,
   "businesses": [
     {
-      "id": "wrenmoor",
-      "name": "Wrenmoor Motors",
-      "area_code": "614",
-      "sells": ["Subaru", "Mazda"],
-      "models": ["Subaru Outback", "Subaru Forester", "Subaru Crosstrek", "Mazda CX-5", "Mazda CX-50", "Mazda3"],
+      "id": "wrenmoor", "name": "Wrenmoor Motors", "description": "a Subaru and Mazda dealer", "area_code": "614",
+      "products": ["Subaru Outback", "Subaru Forester", "Subaru Crosstrek", "Mazda CX-5", "Mazda CX-50", "Mazda3"],
       "hours": "Monday to Saturday, 8 AM to 7 PM; closed Sunday",
       "lines": {"sales": {"number": "555-0110", "screen": true}, "service": {"number": "555-0111", "screen": false}}
     },
     {
-      "id": "larkspan",
-      "name": "Larkspan Auto Group",
-      "area_code": "919",
-      "sells": ["Ford"],
-      "models": ["Ford F-150", "Ford Escape", "Ford Bronco Sport", "Ford Maverick", "Ford Explorer", "Ford Mustang Mach-E"],
+      "id": "larkspan", "name": "Larkspan Auto Group", "description": "a Ford dealer", "area_code": "919",
+      "products": ["Ford F-150", "Ford Escape", "Ford Bronco Sport", "Ford Maverick", "Ford Explorer", "Ford Mustang Mach-E"],
       "hours": "Monday to Saturday, 8 AM to 7 PM; closed Sunday",
-      "lines": {"sales": {"number": "555-0120", "screen": true}, "service": {"number": "555-0121", "screen": false}}
+      "ivr": "Thank you for calling Larkspan Auto Group. For sales, press one. For service and parts, press two.",
+      "lines": {"sales": {"number": "555-0120", "screen": true, "ivr_key": "1"}, "service": {"number": "555-0121", "screen": false, "ivr_key": "2"}}
     },
     {
-      "id": "cobbleford",
-      "name": "Cobbleford Motors",
-      "area_code": "512",
-      "sells": ["Toyota"],
-      "models": ["Toyota RAV4", "Toyota Camry", "Toyota Tacoma", "Toyota Highlander", "Toyota Corolla", "Toyota Sienna"],
+      "id": "cobbleford", "name": "Cobbleford Motors", "description": "a Toyota dealer", "area_code": "512",
+      "products": ["Toyota RAV4", "Toyota Camry", "Toyota Tacoma", "Toyota Highlander", "Toyota Corolla", "Toyota Sienna"],
       "hours": "Monday to Saturday, 8 AM to 7 PM; closed Sunday",
       "lines": {"sales": {"number": "555-0130", "screen": false}, "service": {"number": "555-0131", "screen": false}}
     },
     {
-      "id": "thistlecrest",
-      "name": "Thistlecrest Auto",
-      "area_code": "404",
-      "sells": ["Honda"],
-      "models": ["Honda CR-V", "Honda Civic", "Honda Accord", "Honda Pilot", "Honda HR-V", "Honda Odyssey"],
+      "id": "thistlecrest", "name": "Thistlecrest Auto", "description": "a Honda dealer", "area_code": "404",
+      "products": ["Honda CR-V", "Honda Civic", "Honda Accord", "Honda Pilot", "Honda HR-V", "Honda Odyssey"],
       "hours": "Monday to Saturday, 8 AM to 7 PM; closed Sunday",
       "lines": {"sales": {"number": "555-0140", "screen": true}, "service": {"number": "555-0141", "screen": false}}
     }
   ],
-  "owned_vehicles": [
-    "Chevrolet Equinox", "Nissan Rogue", "Hyundai Tucson", "Kia Sorento", "Jeep Cherokee",
-    "Volkswagen Jetta", "Chevrolet Silverado", "Nissan Altima", "Hyundai Elantra", "Kia Soul"
-  ],
   "scenarios": [
-    {
-      "id": "sales_inquiry", "label": "Sales inquiry", "kind": "conversation", "line": "sales", "agent_role": "salesperson",
-      "brief": "The caller asks whether a particular new model and trim is in stock, roughly what it costs, and whether they can test drive it. The salesperson answers in general terms, asks one or two qualifying questions, and offers a test drive time.",
-      "turns": [10, 16]
-    },
-    {
-      "id": "service_appointment", "label": "Service appointment", "kind": "conversation", "line": "service", "agent_role": "service advisor",
-      "brief": "The caller books routine service (for example an oil change, a tire rotation, a brake inspection, or a check engine light). The advisor asks for the vehicle and mileage, offers a day and time, and mentions a shuttle or a loaner when it fits.",
-      "turns": [10, 16]
-    },
-    {
-      "id": "recall_question", "label": "Recall question", "kind": "conversation", "line": "service", "agent_role": "service advisor",
-      "brief": "The caller received a recall notice in the mail for the vehicle they own and asks whether it applies, whether it costs anything, and how long it takes. The advisor looks it up from the last six characters of the VIN, confirms the repair is free, and books it. Keep the recall itself generic: do not claim that any real make or model has a specific defect, and do not cite a campaign number.",
-      "turns": [10, 16]
-    },
-    {
-      "id": "trade_in", "label": "Trade-in", "kind": "conversation", "line": "sales", "agent_role": "salesperson",
-      "brief": "The caller wants to know what their current vehicle is worth as a trade-in toward a new one. The salesperson asks for the year, mileage and condition, explains that a firm number needs an in-person appraisal, and invites them in.",
-      "turns": [10, 16]
-    },
-    {
-      "id": "parts", "label": "Parts order", "kind": "conversation", "line": "service", "agent_role": "parts counter specialist",
-      "brief": "The caller asks the parts counter for a part or accessory (for example all-weather floor mats, wiper blades, a cabin air filter, or a spare key fob), its price and whether it is in stock. The specialist checks, quotes a price, and arranges pickup or an order.",
-      "turns": [8, 14]
-    },
-    {
-      "id": "recording_copy", "label": "Recording request: copy", "kind": "conversation", "line": "service", "agent_role": "service advisor",
-      "brief": "After the recording notice, the caller asks why the call is recorded, who can hear it, and how to get a copy of their recording. The advisor explains plainly that calls are recorded for quality and records, that the caller can have a copy, and says they will pass the request to the office manager and call back. Then the caller briefly handles a small service question.",
-      "turns": [8, 14]
-    },
-    {
-      "id": "recording_delete", "label": "Recording request: deletion", "kind": "conversation", "line": "sales", "agent_role": "salesperson",
-      "brief": "The caller is uncomfortable that the call is recorded and asks for the recording of this call to be deleted. The salesperson says they will note the request and pass it to the manager who handles recordings, without promising anything they cannot do, and asks whether the caller still wants help with their question.",
-      "turns": [8, 14]
-    },
-    {
-      "id": "hangup", "label": "Hang-up", "kind": "hangup", "line": "sales", "agent_role": "salesperson",
-      "brief": "The caller starts asking about a vehicle, the salesperson asks them to hold while they find the right person, and the caller hangs up before anyone comes back. The script ends with the caller muttering that they will try somewhere else.",
-      "turns": [4, 6]
-    },
-    {
-      "id": "robocall", "label": "Hang-up: screened robocall", "kind": "robocall", "line": "sales", "agent_role": "salesperson",
-      "brief": "An automated prerecorded sales pitch calls the dealership's sales line. The salesperson answers; the recording plays a generic pitch for business energy savings without naming any company. The call is cut off by the line's screening announcement.",
-      "turns": [2, 3]
-    },
-    {
-      "id": "after_hours", "label": "After hours", "kind": "conversation", "line": "service", "agent_role": "after-hours answering service attendant",
-      "brief": "The call comes in after the dealership has closed and is answered by its after-hours answering service on the dealership's behalf. The attendant gives the hours, takes the caller's name, callback number and reason, and says the right department will call back when it opens.",
-      "turns": [8, 12]
-    },
-    {
-      "id": "voicemail", "label": "Voicemail", "kind": "voicemail", "line": "service", "agent_role": "service advisor",
-      "brief": "No one picks up. The first business turn is the advisor's recorded voicemail greeting. The caller then leaves a message with their name, vehicle, reason for calling, and callback number, and hangs up.",
-      "turns": [2, 2]
-    }
+    {"id": "sales_inquiry", "label": "Sales inquiry", "kind": "conversation", "line": "sales", "agent_role": "salesperson", "transfer_to": "sales manager",
+     "brief": "The caller asks whether a particular new model and trim is in stock, roughly what it costs, and whether they can test drive it. The salesperson answers in general terms, asks a qualifying question, and offers a test drive at a later time."},
+    {"id": "service_appointment", "label": "Service appointment", "kind": "conversation", "line": "service", "agent_role": "service advisor",
+     "brief": "The caller books routine service (an oil change, a tire rotation, a brake inspection, or a check engine light). The advisor asks for the vehicle and mileage and offers a later day and time, with a shuttle or loaner if it fits."},
+    {"id": "recall_question", "label": "Recall question", "kind": "conversation", "line": "service", "agent_role": "service advisor",
+     "brief": "The caller got a recall notice in the mail and asks whether it applies, whether it costs anything, and how long it takes. The advisor looks it up from the last six characters of the VIN, confirms the repair is free, and books it. Keep the recall generic: no defect claims about a real model, no campaign number."},
+    {"id": "trade_in", "label": "Trade-in", "kind": "conversation", "line": "sales", "agent_role": "salesperson", "transfer_to": "used-car manager",
+     "brief": "The caller wants to know what their current vehicle is worth as a trade-in. The salesperson asks for the year, mileage and condition, explains that a firm number needs an in-person appraisal, and invites them in."},
+    {"id": "parts", "label": "Parts order", "kind": "conversation", "line": "service", "agent_role": "parts counter specialist",
+     "brief": "The caller asks the parts counter for a part or accessory (all-weather floor mats, wiper blades, a cabin air filter, a spare key fob), its price and whether it is in stock. The specialist checks and arranges pickup or an order."},
+    {"id": "recording_copy", "label": "Recording request: copy", "kind": "conversation", "line": "service", "agent_role": "service advisor",
+     "brief": "After the recording notice, the caller asks why calls are recorded, who can hear them, and how to get a copy of their recording. The advisor explains plainly, says the caller can have a copy, and passes the request to the office manager. The caller may add a small service question."},
+    {"id": "recording_delete", "label": "Recording request: deletion", "kind": "conversation", "line": "sales", "agent_role": "salesperson",
+     "brief": "The caller is uncomfortable that the call is recorded and asks for the recording of this call to be deleted. The salesperson notes the request for the manager who handles recordings, promises nothing they cannot do, and asks whether the caller still wants help."},
+    {"id": "hangup", "label": "Hang-up on hold", "kind": "hangup", "line": "sales", "agent_role": "salesperson",
+     "brief": "The caller starts asking about a vehicle, the salesperson asks them to hold while they find the right person, and the caller hangs up before anyone comes back, muttering that they will try somewhere else."},
+    {"id": "robocall", "label": "Screened robocall", "kind": "robocall", "line": "sales", "agent_role": "salesperson",
+     "brief": "An automated prerecorded sales pitch calls the sales line. The salesperson answers; the recording plays a generic pitch for business energy savings that names no company. The call is cut off by the line's screening announcement."},
+    {"id": "wrong_number", "label": "Wrong number", "kind": "wrong_number", "line": "sales", "agent_role": "salesperson", "people": ["asked_for"],
+     "brief": "The caller meant to reach someone else (the person named under People, or a kind of business, never a named one). The salesperson says they have the wrong number, and the call ends politely and quickly."},
+    {"id": "after_hours", "label": "After hours", "kind": "conversation", "line": "service", "agent_role": "after-hours answering service attendant", "after_hours": true,
+     "brief": "The call comes in after the dealership has closed and is answered by its after-hours answering service on its behalf. The attendant gives the hours, takes a name, callback number and reason, and says the right department will call back when it opens."},
+    {"id": "voicemail", "label": "Voicemail", "kind": "voicemail", "line": "service", "agent_role": "service advisor",
+     "brief": "No one picks up. The first business turn is the advisor's recorded voicemail greeting. The caller leaves a message with their name, vehicle, reason and callback number."}
   ],
-  "pilot_mix": {
-    "sales_inquiry": 3, "service_appointment": 3, "recall_question": 2, "trade_in": 2, "parts": 2,
-    "recording_copy": 1, "recording_delete": 1, "hangup": 1, "robocall": 1, "after_hours": 2, "voicemail": 2
+  "mix": {
+    "sales_inquiry": 7, "service_appointment": 8, "recall_question": 4, "trade_in": 5, "parts": 5, "recording_copy": 2,
+    "recording_delete": 2, "hangup": 3, "robocall": 2, "wrong_number": 4, "after_hours": 4, "voicemail": 4
   },
-  "screen": {
-    "announce": "We can't take this call on this line. Goodbye."
-  }
+  "screen": {"announce": "We can't take this call on this line. Goodbye."}
 }

@@ -1,0 +1,86 @@
+{
+  "industry": "municipal",
+  "version": "municipal-v1",
+  "label": "Municipal offices",
+  "timezone": "America/New_York",
+  "open_days": [0, 1, 2, 3, 4],
+  "notice": {
+    "file": "synthetic-notice-v1",
+    "text": "This call is recorded and transcribed. You can ask the town for a copy of your recording.",
+    "discloses": ["recording", "transcription"]
+  },
+  "caller_area_codes": ["207", "302", "413", "515", "717", "802"],
+  "caller_context": {
+    "template": "They {item}.",
+    "items": ["own a house in town", "rent an apartment in town", "run a small shop in the town center", "moved to town last month", "own a house near the town green", "are a contractor working on a job in town"]
+  },
+  "products_label": "What the office handles",
+  "writer_rules": "Use only the town and the street names given; never name a real town, city, county, state, agency, utility or company. Departments are named generically (the town clerk, the building department, public works). Emergencies are never handled on this line: the caller is told to hang up and dial 911.",
+  "reject_places": true,
+  "businesses": [
+    {
+      "id": "fallowmere", "name": "Town of Fallowmere", "description": "the town hall of a small town", "area_code": "413",
+      "places": ["Fallowmere", "Wickett Lane", "Brannock Road", "the Fallowmere town green"],
+      "products": ["building permits", "dog licenses", "property tax bills", "birth and marriage certificates", "trash and recycling", "water and sewer bills"],
+      "hours": "Monday to Friday, 8:30 AM to 4:30 PM",
+      "ivr": "You've reached the Town of Fallowmere. For the town clerk, tax collector or building department, press one. For public works, press two.",
+      "lines": {"town_hall": {"number": "555-0114", "screen": true, "ivr_key": "1"}, "public_works": {"number": "555-0115", "screen": false, "ivr_key": "2"}}
+    },
+    {
+      "id": "quillby", "name": "Village of Quillby Falls", "description": "the village office of a small village", "area_code": "802",
+      "places": ["Quillby Falls", "Sallowfield Drive", "Mertle Court", "the Quillby Falls library"],
+      "products": ["building permits", "dog licenses", "property tax bills", "parks and recreation programs", "trash and recycling", "voter registration"],
+      "hours": "Monday to Friday, 8:30 AM to 4:30 PM",
+      "lines": {"town_hall": {"number": "555-0124", "screen": false}, "public_works": {"number": "555-0125", "screen": false}}
+    },
+    {
+      "id": "marlowen", "name": "Town of Marlowen", "description": "the town hall of a mid-sized town", "area_code": "717",
+      "places": ["Marlowen", "Ostling Avenue", "Carrow Hill Road", "Marlowen Memorial Park"],
+      "products": ["building permits", "property tax bills", "birth and marriage certificates", "parks and recreation programs", "water and sewer bills", "bulk trash pickup"],
+      "hours": "Monday to Friday, 8:30 AM to 4:30 PM",
+      "lines": {"town_hall": {"number": "555-0134", "screen": true}, "public_works": {"number": "555-0135", "screen": false}}
+    },
+    {
+      "id": "dunstrel", "name": "City of Dunstrel", "description": "the city hall of a small city", "area_code": "515",
+      "places": ["Dunstrel", "Tarrow Lane", "Dunmere Street", "the Dunstrel community center"],
+      "products": ["building permits", "dog licenses", "property tax bills", "parks and recreation programs", "trash and recycling", "street repairs"],
+      "hours": "Monday to Friday, 8:30 AM to 4:30 PM",
+      "lines": {"town_hall": {"number": "555-0144", "screen": false}, "public_works": {"number": "555-0145", "screen": false}}
+    }
+  ],
+  "scenarios": [
+    {"id": "permit", "label": "Permit question", "kind": "conversation", "line": "town_hall", "agent_role": "building department clerk", "transfer_to": "building inspector",
+     "brief": "The caller asks whether they need a permit for a home project (a deck, a fence, a shed, replacing a water heater) and how to apply. The clerk explains the steps and the fee in rough terms and how long a review takes."},
+    {"id": "tax_bill", "label": "Property tax bill", "kind": "conversation", "line": "town_hall", "agent_role": "tax collector's clerk", "transfer_to": "tax assessor",
+     "brief": "The caller has a question about a property tax bill: the due date, a late notice, paying in installments, or a change after a reassessment. The clerk explains and says how to pay."},
+    {"id": "records", "label": "Records request", "kind": "conversation", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "The caller wants a certified copy of a birth or marriage certificate. The clerk asks who it is for, explains what ID is needed and the fee in rough terms, and how to pick it up or get it by mail."},
+    {"id": "recreation", "label": "Recreation sign-up", "kind": "conversation", "line": "town_hall", "agent_role": "recreation department clerk",
+     "brief": "The caller asks about signing a child up for a summer program or a class. The clerk explains the dates, the age range, the fee in rough terms and how to register."},
+    {"id": "trash", "label": "Missed trash pickup", "kind": "conversation", "line": "public_works", "agent_role": "public works dispatcher",
+     "brief": "The caller's trash or recycling was not picked up, or they want a bulk item collected. The dispatcher takes the street, explains the schedule and says when a truck will come back by."},
+    {"id": "pothole", "label": "Pothole or streetlight report", "kind": "conversation", "line": "public_works", "agent_role": "public works dispatcher", "transfer_to": "road crew supervisor",
+     "brief": "The caller reports a pothole, a streetlight that is out, or a fallen branch on one of the streets named under Places. The dispatcher takes the location and a callback number and says when a crew can look at it."},
+    {"id": "water_bill", "label": "Water bill", "kind": "conversation", "line": "town_hall", "agent_role": "utility billing clerk",
+     "brief": "The caller's water and sewer bill is much higher than usual. The clerk explains how the reading works, suggests checking for a running toilet or a leak, and offers to schedule a meter re-read."},
+    {"id": "recording_copy", "label": "Recording request: copy", "kind": "conversation", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "After the recording notice, the caller asks why calls are recorded, who can hear them, and how to get a copy of their recording. The clerk explains plainly and takes the request."},
+    {"id": "recording_delete", "label": "Recording request: deletion", "kind": "conversation", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "The caller is uncomfortable that the call is recorded and asks for the recording to be deleted. The clerk explains that town records follow retention rules, notes the request for the records officer, promises nothing they cannot do, and asks whether the caller still needs help."},
+    {"id": "hangup", "label": "Hang-up on hold", "kind": "hangup", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "The caller starts asking about a bill, the clerk asks them to hold while they find the right person, and the caller hangs up after waiting, saying they'll come in person instead."},
+    {"id": "robocall", "label": "Screened robocall", "kind": "robocall", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "An automated prerecorded pitch calls the town hall, offering a generic office supply deal that names no company. The clerk answers; the call is cut off by the line's screening announcement."},
+    {"id": "wrong_number", "label": "Wrong number", "kind": "wrong_number", "line": "public_works", "agent_role": "public works dispatcher", "people": ["asked_for"],
+     "brief": "The caller meant to reach someone else (the person named under People, or a kind of business, never a named one). The dispatcher says it's the wrong number, and the call ends quickly."},
+    {"id": "after_hours", "label": "After hours", "kind": "conversation", "line": "public_works", "agent_role": "after-hours on-call dispatcher", "after_hours": true,
+     "brief": "The call comes in after the offices have closed and reaches the public works on-call dispatcher. The caller reports something that can't wait until morning (water bubbling up in the road, a tree across a street named under Places). The dispatcher takes the location and a callback number and sends the on-call crew."},
+    {"id": "voicemail", "label": "Voicemail", "kind": "voicemail", "line": "town_hall", "agent_role": "town clerk",
+     "brief": "No one picks up. The first business turn is the clerk's office recorded voicemail greeting. The caller leaves a message with their name, the question and a callback number."}
+  ],
+  "mix": {
+    "permit": 6, "tax_bill": 5, "records": 4, "recreation": 3, "trash": 6, "pothole": 4, "water_bill": 4,
+    "recording_copy": 2, "recording_delete": 2, "hangup": 3, "robocall": 2, "wrong_number": 3, "after_hours": 3, "voicemail": 3
+  },
+  "screen": {"announce": "We can't take this call on this line. Goodbye."}
+}

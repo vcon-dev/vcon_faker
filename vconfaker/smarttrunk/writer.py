@@ -6,6 +6,9 @@ script JSON. The model is ``claude-sonnet-5-5`` with adaptive thinking (its defa
 fallback model instead of failing the call. A rejected script is written again from scratch
 with the reasons, up to ``attempts`` times.
 
+Spending is capped: with ``max_cost_usd`` the writer stops before a request that would start
+past the cap, counting what earlier runs recorded in ``usage_file``.
+
 The API key is read from ``ANTHROPIC_API_KEY`` by the SDK. Nothing here prints or logs it.
 """
 from __future__ import annotations
@@ -13,10 +16,11 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .hygiene import check_script
-from .pack import CallPlan
+from .pack import LENGTHS, OPENINGS, PEOPLE_FORMS, CallPlan
 
 MODEL = "claude-sonnet-5-5"
 EFFORT = "medium"
@@ -35,10 +39,11 @@ SCRIPT_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "speaker": {"type": "string", "enum": ["caller", "business"]},
+                    "speaker": {"type": "string", "enum": ["caller", "business", "colleague"]},
                     "text": {"type": "string"},
+                    "interrupts": {"type": "boolean"},
                 },
-                "required": ["speaker", "text"],
+                "required": ["speaker", "text", "interrupts"],
                 "additionalProperties": False,
             },
         },
@@ -49,50 +54,50 @@ SCRIPT_SCHEMA: dict[str, Any] = {
 }
 
 SYSTEM_PROMPT = """\
-You write short phone call scripts for a synthetic test corpus. Each script is one call to a \
-business, turned into audio with text-to-speech and played to speech recognition, so it must \
-read aloud naturally.
+You write phone call scripts for a synthetic test corpus. Each script is one call to a small \
+business or office, turned into audio with text-to-speech and played to speech recognition, so \
+it must read aloud naturally.
 
 How people talk:
-- Spoken English as it sounds on a real business line: short turns, contractions, the odd \
-"um" or "let me check", plain words. Most turns are one or two sentences; none is over 45 words.
-- The business side is polite and practical, never a sales brochure. The caller has a reason \
-to call and a little personality (hurried, chatty, unsure, friendly), shown in how they talk.
-- The business's automated recording notice has already played before the first turn. Do not \
-write it. The caller may mention it.
+- Spoken English as it sounds on a real business line: contractions, the odd "um" or "let me \
+check", plain words, people who do not always speak in full sentences. Turns vary in length; \
+none is over 45 words.
+- The business side is polite and practical. The caller has a reason to call and a little \
+personality (hurried, chatty, unsure, friendly, annoyed), shown in how they talk.
+- The automated recording notice has already played, and any phone menu has been dealt with, \
+before the first turn. Do not write either. The caller may mention the notice.
 - Text only: no stage directions, sound effects, speaker labels, brackets or emoji inside a turn.
+- "interrupts" is true only on a turn that cuts in before the other person has finished; the \
+turn it cuts into then ends mid-sentence with a dash. Otherwise it is false.
+- "colleague" is the speaker label for the person a call is transferred to, and is used only \
+when the brief says there is a transfer.
 
-Names and facts (these are hard rules; a script that breaks one is thrown away):
-- Use only the names listed under "Allowed names". The person answering gives only their \
-first name. Never invent another person, business, town, street, school or website.
-- Never name a real company: no other dealers, car retailers, parts chains, banks, lenders, \
-insurers, valuation or history-report sites, rideshare or rental companies. Say "our finance \
-team", "an online estimate", "your insurance" instead.
-- Vehicle makes and models are fine, but only the ones in the brief.
+Names and facts (hard rules; a script that breaks one is thrown away):
+- Use only the names listed under "Allowed names" and "Places". The person answering gives only \
+their first name. Never invent another person, business, town, street, school or website.
+- Never name a real company, hospital, pharmacy, bank, insurer, utility, agency, chain, \
+marketplace or place. Say "your insurance", "your usual pharmacy", "an online estimate", \
+"the gas company" instead.
 - Phone numbers: only the caller's number given in the brief, written with digits like \
-555-0152. No other numbers that look like phone numbers. No email addresses or web addresses.
-- Do not state facts about real vehicles (defects, ratings, exact prices). Prices are rough \
-("in the low thirties"). A VIN is only ever its last six characters, letters and digits.
+555-0152. No other numbers that look like phone numbers (911 is fine). No email or web addresses.
+- Nothing is booked for the moment of the call. Anything scheduled is for a later day, or at \
+least two hours after the call.
 
-Output: the script as JSON. "turns" alternate naturally between "caller" and "business". \
-"names_used" lists every person or business name that appears in the turns. "summary" is one \
-sentence on what happens; "outcome" is a few words (for example "test drive booked")."""
+Output: the script as JSON. "names_used" lists every person, business and place name that \
+appears in the turns. "summary" is one sentence on what happens; "outcome" is a few words."""
 
 KIND_RULES = {
-    "conversation": "The business speaks first, greeting with the business name, the department, and their first name.",
-    "hangup": (
-        "The business speaks first, greeting with the business name, the department, and their first name. "
-        "The last turn is the caller's, said to themselves after being left on hold; then they hang up."
-    ),
+    "conversation": "",
+    "hangup": "The last turn is the caller's, said to themselves after being left on hold; then they hang up.",
     "voicemail": (
-        "Exactly two turns. Turn 1 (business) is the advisor's recorded voicemail greeting, ending by asking "
-        "the caller to leave a message after the tone. Turn 2 (caller) is the whole message."
+        "Exactly two turns. Turn 1 (business) is the recorded voicemail greeting, ending by asking the caller to "
+        "leave a message after the tone. Turn 2 (caller) is the whole message."
     ),
     "robocall": (
-        "Exactly two turns. Turn 1 (business) is the greeting with the business name, the department, and their "
-        "first name. Turn 2 (caller) is a prerecorded automated pitch, about 35 words, that names no company and "
-        "breaks off mid-sentence, ending with an ellipsis."
+        "Exactly two turns. Turn 1 (business) answers the phone. Turn 2 (caller) is a prerecorded automated pitch, "
+        "about 35 words, that names no company and breaks off mid-sentence, ending with an ellipsis."
     ),
+    "wrong_number": "Keep it brief and natural; people apologise and hang up.",
 }
 
 
@@ -144,7 +149,7 @@ class Usage:
 class Script:
     summary: str
     outcome: str
-    turns: list[dict[str, str]]
+    turns: list[dict[str, Any]]
     names_used: list[str]
     attempts: int
     rejected: list[list[str]] = field(default_factory=list)
@@ -155,56 +160,107 @@ class Script:
 
 
 def allowed_names(plan: CallPlan) -> list[str]:
-    names = [plan.business["name"], plan.agent.name or ""]
+    names = [plan.business["name"], plan.agent.name or "", *plan.business.get("places", []), *plan.people.values()]
     if plan.caller.name:
         names.append(plan.caller.name)
+    if plan.colleague:
+        names.append(plan.colleague.name or "")
     return [n for n in names if n]
 
 
-def products(plan: CallPlan, pack: dict[str, Any]) -> list[str]:
-    return [*plan.business["sells"], *plan.business["models"], plan.owned_vehicle, plan.wanted_model]
+def products(plan: CallPlan, pack: dict[str, Any] | None = None) -> list[str]:
+    return [*plan.business["products"], *plan.business.get("sells", []), plan.wanted, plan.caller_context]
 
 
-def brief(plan: CallPlan) -> str:
+def brief(plan: CallPlan, pack: dict[str, Any]) -> str:
     s, b = plan.scenario, plan.business
     when = plan.start.strftime("%A at %-I:%M %p")
+    length = LENGTHS[plan.length]
+    route = f" after the phone menu (the caller pressed {plan.ivr_key})" if plan.ivr_key else ""
     lines = [
-        f"Business: {b['name']}, a {' and '.join(b['sells'])} dealer. Hours: {b['hours']}.",
-        f"This call reaches the {plan.line} line. The person answering: {plan.agent.name}, {s['agent_role']}.",
+        f"Business: {b['name']}, {b['description']}. Hours: {b['hours']}.",
+        f"This call reaches the {plan.line.replace('_', ' ')} line{route}. The person answering: {plan.agent.name}, {s['agent_role']}.",
     ]
     if plan.caller.name:
-        lines.append(
-            f"Caller: {plan.caller.name}, calling from 555-{plan.caller_tel[-4:]}. "
-            f"They own a {plan.owned_vehicle}."
-        )
+        lines.append(f"Caller: {plan.caller.name}, calling from 555-{plan.caller_tel[-4:]}. {plan.caller_context}")
     else:
         lines.append("Caller: an automated dialer playing a prerecorded message.")
     lines += [
-        f"Vehicles the dealer sells: {', '.join(b['models'])}. The model of interest, if any: {plan.wanted_model}.",
-        f"The call is placed on {when}{' (after the dealership has closed)' if plan.after_hours else ''}. "
-        "Anything it books is for a later day, not this moment.",
+        f"{pack.get('products_label', 'What the business offers')}: {', '.join(b['products'])}. Of interest, if it fits: {plan.wanted}.",
+        f"The call is placed on {when}{' (after the business has closed)' if plan.after_hours else ''}. "
+        "Anything booked is for a later day or at least two hours later, never for this moment.",
         f"Scenario: {s['label']}. {s['brief']}",
-        f"Length: {s['turns'][0]} to {s['turns'][1]} turns.",
-        KIND_RULES[plan.kind],
-        f"Allowed names: {'; '.join(allowed_names(plan))}.",
     ]
+    if plan.kind not in ("voicemail", "robocall"):
+        lines.append(f"Opening: {OPENINGS[plan.opening]}")
+    lines.append(
+        f"Length: {length['words'][0]} to {length['words'][1]} words in all, {length['turns'][0]} to {length['turns'][1]} turns "
+        f"({length['says']})."
+    )
+    if plan.kind in ("conversation", "wrong_number"):
+        lines.append("However short, the call comes to a natural end: a goodbye or a clear close, not a question left hanging.")
+    if plan.transfer:
+        lines.append(
+            f"Transfer: partway through, {plan.agent.name} transfers the caller to {plan.colleague.name}, the "
+            f"{plan.colleague_role}, after a short hold; label {plan.colleague.name}'s turns \"colleague\". "
+            f"{plan.colleague.name} greets the caller by name and picks up where {plan.agent.name} left off."
+        )
+    if plan.interruptions:
+        lines.append("Interruptions: once or twice, one person cuts in before the other finishes (mark it as the rules say).")
+    if KIND_RULES[plan.kind]:
+        lines.append(KIND_RULES[plan.kind])
+    if pack.get("writer_rules"):
+        lines.append(f"Industry rules: {pack['writer_rules']}")
+    if plan.people:
+        lines.append("People: " + "; ".join(f"{name}, {PEOPLE_FORMS[role][1]}" for role, name in plan.people.items()) + ".")
+    if b.get("places"):
+        lines.append(f"Places: {'; '.join(b['places'])}.")
+    lines.append(f"Allowed names: {'; '.join(allowed_names(plan))}.")
     return "\n".join(lines)
 
 
+class BudgetExceeded(Exception):
+    pass
+
+
 class ScriptWriter:
-    def __init__(self, pack: dict[str, Any], *, attempts: int = 3, client: Any = None) -> None:
+    def __init__(
+        self,
+        pack: dict[str, Any],
+        *,
+        attempts: int = 3,
+        client: Any = None,
+        max_cost_usd: float | None = None,
+        usage_file: Path | None = None,
+    ) -> None:
         self.pack = pack
         self.attempts = attempts
         self.usage = Usage()
+        self.max_cost_usd = max_cost_usd
+        self.prior_cost_usd = _recorded_cost(usage_file)
         if client is None:
             import anthropic
 
             client = anthropic.Anthropic(max_retries=4)
         self.client = client
 
+    def check(self, plan: CallPlan, data: dict[str, Any]):
+        return check_script(
+            data,
+            allowed_names=allowed_names(plan),
+            products=products(plan),
+            turn_range=tuple(LENGTHS[plan.length]["turns"]),
+            industry=plan.industry,
+            extra_real=self.pack.get("real_businesses", ()),
+            reject_places=bool(self.pack.get("reject_places")),
+            call_start=plan.start,
+            colleague=plan.transfer,
+            natural_end=plan.kind in ("conversation", "wrong_number"),
+        )
+
     def write(self, plan: CallPlan) -> Script:
         rejected: list[list[str]] = []
-        base = brief(plan)
+        base = brief(plan, self.pack)
         for attempt in range(1, self.attempts + 1):
             prompt = base
             if rejected:
@@ -213,19 +269,15 @@ class ScriptWriter:
             if data is None:
                 rejected.append([problem])
                 continue
-            verdict = check_script(
-                data,
-                allowed_names=allowed_names(plan),
-                products=products(plan, self.pack),
-                turn_range=tuple(plan.scenario["turns"]),
-                industry=plan.industry,
-                extra_real=self.pack.get("real_businesses", ()),
-            )
+            verdict = self.check(plan, data)
             if verdict.ok:
                 return Script(
                     summary=data["summary"],
                     outcome=data["outcome"],
-                    turns=[{"speaker": t["speaker"], "text": t["text"].strip()} for t in data["turns"]],
+                    turns=[
+                        {"speaker": t["speaker"], "text": t["text"].strip(), "interrupts": bool(t.get("interrupts"))}
+                        for t in data["turns"]
+                    ],
                     names_used=data["names_used"],
                     attempts=attempt,
                     rejected=rejected,
@@ -235,6 +287,9 @@ class ScriptWriter:
         raise ScriptRejected(plan.call_id, rejected)
 
     def _request(self, prompt: str) -> tuple[dict[str, Any] | None, str]:
+        spent = self.prior_cost_usd + self.usage.cost_usd
+        if self.max_cost_usd is not None and spent >= self.max_cost_usd:
+            raise BudgetExceeded(f"script spending reached ${spent:.2f}, the cap is ${self.max_cost_usd:.2f}")
         t0 = time.monotonic()
         response = self.client.beta.messages.create(
             model=MODEL,
@@ -257,6 +312,13 @@ class ScriptWriter:
             return json.loads(text), ""
         except json.JSONDecodeError:
             return None, "the reply was not valid JSON"
+
+
+def _recorded_cost(usage_file: Path | None) -> float:
+    if usage_file is None or not Path(usage_file).is_file():
+        return 0.0
+    record = json.loads(Path(usage_file).read_text())
+    return float(sum(r.get("estimated_cost_usd", 0) for r in record.get("runs", [])))
 
 
 class ScriptRejected(Exception):

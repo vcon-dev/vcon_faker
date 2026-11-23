@@ -51,19 +51,71 @@ REAL_NAMES: dict[str, tuple[str, ...]] = {
         "Toyota Financial", "Ford Credit", "Honda Financial", "Subaru Motors Finance", "Westlake Financial",
         "Credit Acceptance", "CarShield",
     ),
-    # Still to fill before those packs are written:
-    "clinic": (),  # hospital systems, urgent-care and pharmacy chains, labs, insurers' plan names
-    "municipal": (),  # real towns, counties and agencies, utilities, state DMV names
-    "home_services": (),  # national plumbing, HVAC, pest, roofing and cleaning chains; lead marketplaces
+    "clinic": (
+        # hospital systems and health networks
+        "HCA", "Kaiser Permanente", "Kaiser", "Mayo Clinic", "Cleveland Clinic", "Johns Hopkins", "Mass General",
+        "Ascension", "CommonSpirit", "Trinity Health", "Providence", "Advocate", "Atrium Health", "Sutter Health",
+        "Intermountain", "Banner Health", "Northwell", "NYU Langone", "Tenet", "UPMC", "Baylor Scott",
+        "Ochsner", "Geisinger", "Mount Sinai", "Cedars-Sinai", "MedStar", "Novant", "AdventHealth", "Sanford Health",
+        # urgent care, pharmacies and labs
+        "MinuteClinic", "CityMD", "MedExpress", "Concentra", "CVS", "Walgreens", "Rite Aid", "Kroger", "Publix",
+        "Express Scripts", "OptumRx", "Caremark", "Quest Diagnostics", "Labcorp", "GoodRx",
+        # insurers and plans
+        "UnitedHealthcare", "Aetna", "Cigna", "Humana", "Blue Cross", "Blue Shield", "Anthem", "Centene", "Molina",
+        "Oscar Health", "Delta Dental", "MetLife", "Guardian",
+        # dental chains and telehealth
+        "Aspen Dental", "Heartland Dental", "Western Dental", "Pacific Dental", "Coast Dental", "Bright Now",
+        "Teladoc", "One Medical", "Zocdoc",
+    ),
+    "municipal": (
+        # federal and state agencies, named rather than described
+        "FEMA", "IRS", "Social Security Administration", "USPS", "EPA", "HUD", "Medicaid office",
+        # utilities and haulers
+        "Con Edison", "PG&E", "Duke Energy", "Dominion", "Xcel", "National Grid", "Eversource", "ComEd",
+        "Waste Management", "Republic Services", "Comcast", "Xfinity", "Verizon", "Spectrum",
+        # states
+        "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+        "Florida", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+        "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana",
+        "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina",
+        "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina",
+        "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Washington", "West Virginia", "Wisconsin",
+        "Wyoming",
+        # the largest cities (towns and counties in general are caught as places)
+        "Chicago", "Houston", "Phoenix", "Philadelphia", "San Antonio", "San Diego", "Dallas", "Austin",
+        "Jacksonville", "Columbus", "Charlotte", "Indianapolis", "Seattle", "Denver", "Boston", "Nashville",
+        "Detroit", "Portland", "Las Vegas", "Memphis", "Louisville", "Baltimore", "Milwaukee", "Albuquerque",
+        "Atlanta", "Miami", "Cleveland", "Pittsburgh", "Cincinnati", "Orlando", "Tampa", "Sacramento",
+    ),
+    "home_services": (
+        # national plumbing, HVAC and electrical brands and franchises
+        "Roto-Rooter", "Mr. Rooter", "Rescue Rooter", "ARS", "One Hour Heating", "Benjamin Franklin Plumbing",
+        "Mister Sparky", "Aire Serv", "Service Experts", "Sears Home Services", "Mr. Electric", "Mr. Handyman",
+        "Ace Hardware", "Carrier", "Trane", "Lennox", "Rheem", "Goodman",
+        # pest, lawn and cleaning
+        "Terminix", "Orkin", "Aptive", "Truly Nolen", "Rollins", "TruGreen", "Lawn Doctor", "Molly Maid",
+        "Merry Maids", "Stanley Steemer", "Chem-Dry", "ServiceMaster", "Servpro", "Rainbow International",
+        # marketplaces and movers
+        "Angi", "Angie's List", "HomeAdvisor", "Thumbtack", "Yelp", "Nextdoor", "TaskRabbit", "Handy",
+        "Two Men and a Truck", "U-Haul", "LeafFilter", "Window World", "Bath Fitter",
+    ),
 }
 
 # Ordinary words in lower case: matched only as written, whatever their length.
-AMBIGUOUS = {"Ally", "Chase", "Budget", "Progressive", "Enterprise", "Target", "Group 1", "Take 5", "Advance Auto"}
+AMBIGUOUS = {
+    "Ally", "Chase", "Budget", "Progressive", "Enterprise", "Target", "Group 1", "Take 5", "Advance Auto",
+    "Providence", "Advocate", "Ascension", "Guardian", "Carrier", "Handy", "Angi", "Dominion", "Spectrum",
+    "Tenet", "Concentra", "Anthem",
+}
 
 DEPARTMENT_WORDS = {
     "sales", "service", "parts", "finance", "department", "desk", "counter", "office", "manager",
     "showroom", "center", "express", "lube", "collision", "body", "shop", "team", "the",
     "and", "of", "auto", "motors", "group", "dealership", "dealer",
+    "front", "billing", "dispatch", "clerk", "town", "hall", "city", "village", "public", "works",
+    "building", "recreation", "tax", "collector", "assessor", "records", "board", "practice", "clinic",
+    "dental", "pediatrics", "medicine", "family", "nurse", "patient", "portal", "pharmacy", "insurance",
+    "answering", "on-call", "plumbing", "heating", "air", "electric", "pest", "lawn", "drain",
 }
 
 # A phone number written the way phone numbers are written: 555-0152, 555 0152, (614) 555-0152,
@@ -131,12 +183,45 @@ def _real_patterns(names: tuple[str, ...]) -> tuple[re.Pattern[str] | None, re.P
     return compile_(loose, re.I), compile_(strict, 0)
 
 
-def real_business_matches(text: str, industry: str = "dealership", extra: list[str] | tuple[str, ...] = ()) -> list[str]:
+def real_business_matches(
+    text: str, industry: str = "dealership", extra: list[str] | tuple[str, ...] = (), given: set[str] | None = None
+) -> list[str]:
+    """Real names in ``text``. A match that is one of the call's own given words is not counted:
+    a caller surnamed Washington is not the state."""
     found = []
     for pattern in _real_patterns(real_names(industry, extra)):
         if pattern is not None:
-            found += [m.group(0) for m in pattern.finditer(text)]
+            found += [m.group(0) for m in pattern.finditer(text) if not (given and m.group(0).lower() in given)]
     return found
+
+
+_DAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_CLOCK = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?(?![\d:])", re.I)
+_LATER_DAY = re.compile(r"\btomorrow\b|\bnext\b|\bweek\b|\bmonth\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b", re.I)
+_HOURS_TALK = re.compile(r"\b(?:open|opens|close|closes|closed|until|hours)\b", re.I)
+
+
+def books_at_call_time(text: str, call_start: Any) -> list[str]:
+    """Sentences that put something at the moment of the call: a clock time within 5 minutes
+    before to 30 minutes after it, said without moving to another day. Opening hours are ignored."""
+    weekday = _DAY_NAMES[call_start.weekday()]
+    now = call_start.hour * 60 + call_start.minute
+    hits = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        lower = sentence.lower()
+        if _LATER_DAY.search(lower) or _HOURS_TALK.search(lower):
+            continue
+        if any(d in lower for d in _DAY_NAMES if d != weekday):
+            continue
+        for m in _CLOCK.finditer(sentence):
+            hour, minute, half = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
+            if not (m.group(2) or half) or not 1 <= hour <= 12:
+                continue  # a bare number is not a time
+            candidates = [hour % 12 + (12 if half.startswith("p") else 0)] if half else [hour % 12, hour % 12 + 12]
+            if any(-5 <= c * 60 + minute - now <= 30 for c in candidates):
+                hits.append(sentence.strip())
+                break
+    return hits
 
 
 @dataclass
@@ -168,21 +253,33 @@ def check_script(
     turn_range: tuple[int, int],
     industry: str = "dealership",
     extra_real: list[str] | tuple[str, ...] = (),
+    reject_places: bool = False,
+    call_start: Any = None,
+    colleague: bool = False,
+    natural_end: bool = False,
 ) -> Verdict:
     """Problems that reject the script, and notes that only get recorded.
 
     ``industry`` picks the list of real names to refuse (``REAL_NAMES``), and ``extra_real``
-    adds a pack's own.
+    adds a pack's own. With ``reject_places`` (the municipal pack) a place the call was not given
+    is refused rather than noted. With ``call_start``, a booking at the moment of the call is
+    refused. A "colleague" turn is allowed only when the call has a transfer. With ``natural_end`` a
+    call may not stop on an unanswered question.
     """
     v = Verdict()
     turns = script.get("turns") or []
     lo, hi = turn_range
     if not lo <= len(turns) <= hi + 2:
         v.problems.append(f"{len(turns)} turns, wanted {lo} to {hi}")
+    speakers = ("caller", "business", "colleague") if colleague else ("caller", "business")
     for t in turns:
-        if t.get("speaker") not in ("caller", "business") or not str(t.get("text", "")).strip():
-            v.problems.append("a turn has no text or an unknown speaker")
+        if t.get("speaker") not in speakers or not str(t.get("text", "")).strip():
+            v.problems.append(f"a turn has no text or a speaker other than {', '.join(speakers)}")
             break
+    if colleague and not any(t.get("speaker") == "colleague" for t in turns):
+        v.problems.append("the transfer never reaches the colleague")
+    if natural_end and turns and str(turns[-1].get("text", "")).rstrip().endswith("?"):
+        v.problems.append("the call ends on a question nobody answers")
 
     text = "\n".join(str(t.get("text", "")) for t in turns)
     for number in numbers_outside_range(text):
@@ -191,10 +288,14 @@ def check_script(
         v.problems.append("mentions an email address")
     if WEB.search(text):
         v.problems.append("mentions a web address")
-    for name in real_business_matches(text, industry, extra_real):
-        v.problems.append(f"names a real business: {name!r}")
-
     ok_words = allowed_words(allowed_names, products)
+    given = allowed_words(allowed_names, [])
+    for name in real_business_matches(text, industry, extra_real, given=given):
+        v.problems.append(f"names a real business: {name!r}")
+    if call_start is not None:
+        for sentence in books_at_call_time(text, call_start):
+            v.problems.append(f"books something for the moment of the call: {sentence!r}")
+
     person_words = allowed_words(allowed_names, [])
     for name in script.get("names_used") or []:
         if not _covered(name, ok_words):
@@ -213,7 +314,10 @@ def check_script(
             # the occasional rewrite when spaCy's small model tags a common noun ("Front")
             v.problems.append(f"names an organisation the call was not given: {ent!r}")
         elif label in ("GPE", "LOC", "FAC") and not _covered(ent, ok_words):
-            v.notes.append(f"place named: {ent!r}")
+            if reject_places:
+                v.problems.append(f"names a place the call was not given: {ent!r}")
+            else:
+                v.notes.append(f"place named: {ent!r}")
     v.problems = list(dict.fromkeys(v.problems))
     return v
 
@@ -245,7 +349,8 @@ def _covered(name: str, ok_words: set[str]) -> bool:
         if not word or any(ch.isdigit() for ch in word) or (word.isupper() and len(word) <= 4):
             continue
         word = word.lower().removesuffix("'s")
-        if word not in ok_words and word not in CAR_WORDS and word not in SPOKEN_WORDS:
+        known = ok_words | CAR_WORDS | SPOKEN_WORDS
+        if word not in known and not (word.endswith("s") and word[:-1] in known):  # "Foresters"
             return False
     return True
 
