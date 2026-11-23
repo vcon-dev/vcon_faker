@@ -5,3 +5,7 @@ venv
 *.wav
 *.pyc
 .streamlit
+.venv*/
+.omc/
+!tests/appendix-c-json-schema.json
+!vconfaker/smarttrunk/packs/*.json

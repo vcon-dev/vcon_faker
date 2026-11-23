@@ -71,6 +71,45 @@ Before running the script, ensure you have the following:
 
 - The script uses OpenAI's language model and text-to-speech model. You can change the models by updating the `OPENAI_MODEL` and `OPENAI_TTS_MODEL` environment variables in the `.env` file.
 
+## Smart Trunk calls with local voices
+
+`python -m vconfaker.smarttrunk` makes synthetic phone calls in Smart Trunk's call shape: a
+caller phones an invented business on its Smart Trunk number and is forwarded. Each call is a
+vCon (syntax `0.5.0`) with the recording notice at the start of the recording, the notice
+evidence as tags, the recording as an external MP3 with its `content_hash`, a transcript, and,
+on numbers that screen calls, a screening outcome. Every vCon carries the three synthetic
+markers described in [CONSENT.md](CONSENT.md).
+
+The stages, one call at a time in one process:
+
+1. **Scenario pack.** `vconfaker/smarttrunk/packs/<industry>.json` names invented businesses,
+   their lines (numbers only in 555-0100 to 555-0199), the scenarios and the mix. The dealership
+   pack covers sales, service, recalls, trade-ins, parts, a caller asking for a copy or deletion
+   of their recording, a hang-up, a screened robocall, after hours and voicemail.
+2. **Script.** Claude (`claude-sonnet-5-5`, structured output) writes each call from a brief.
+   A script that names a person or business it was not given, a real company, an email or web
+   address, or a number outside the fictional range is thrown away and written again.
+3. **Voices.** Kokoro-82M through mlx-audio, on the machine, one voice per speaker.
+4. **Phone audio.** ffmpeg: ringback, the notice, telephone band, light line noise, G.711 at
+   8 kHz mono, then MP3.
+5. **Check.** parakeet-mlx transcribes every call; a call whose word error rate against the
+   script is over 20% is spoken again with other voices. The recognizer's transcript, not the
+   script, goes into the vCon.
+6. **vCon.** Built with vcon-lib and validated with vcon-lib, the core-05 JSON schema in
+   `tests/` and the governance check.
+
+Set up a venv from `requirements-smarttrunk.txt` (Apple silicon), install `parakeet-mlx` and
+ffmpeg, then from the repo root:
+
+```
+python -m vconfaker.smarttrunk --industry dealership --count 20 --out ~/synthetic-calls/run-1
+```
+
+The output folder holds `vcons/`, `audio/`, `scripts/`, `transcripts/`, `manifest.json` (timings,
+memory, token use and estimated cost) and an `index.html` to listen to each call. Keep it outside
+the repo. The MP3 URLs in the vCons use `--media-base-url`; whatever publishes the audio sets the
+real one, and the `content_hash` lets it check the file. Offline tests: `pytest tests/test_smarttrunk.py`.
+
 ## License
 
 This project is open-source and available under the [MIT License](LICENSE).
