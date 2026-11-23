@@ -256,13 +256,15 @@ def check_script(
     reject_places: bool = False,
     call_start: Any = None,
     colleague: bool = False,
+    natural_end: bool = False,
 ) -> Verdict:
     """Problems that reject the script, and notes that only get recorded.
 
     ``industry`` picks the list of real names to refuse (``REAL_NAMES``), and ``extra_real``
     adds a pack's own. With ``reject_places`` (the municipal pack) a place the call was not given
     is refused rather than noted. With ``call_start``, a booking at the moment of the call is
-    refused. A "colleague" turn is allowed only when the call has a transfer.
+    refused. A "colleague" turn is allowed only when the call has a transfer. With ``natural_end`` a
+    call may not stop on an unanswered question.
     """
     v = Verdict()
     turns = script.get("turns") or []
@@ -276,6 +278,8 @@ def check_script(
             break
     if colleague and not any(t.get("speaker") == "colleague" for t in turns):
         v.problems.append("the transfer never reaches the colleague")
+    if natural_end and turns and str(turns[-1].get("text", "")).rstrip().endswith("?"):
+        v.problems.append("the call ends on a question nobody answers")
 
     text = "\n".join(str(t.get("text", "")) for t in turns)
     for number in numbers_outside_range(text):
@@ -345,7 +349,8 @@ def _covered(name: str, ok_words: set[str]) -> bool:
         if not word or any(ch.isdigit() for ch in word) or (word.isupper() and len(word) <= 4):
             continue
         word = word.lower().removesuffix("'s")
-        if word not in ok_words and word not in CAR_WORDS and word not in SPOKEN_WORDS:
+        known = ok_words | CAR_WORDS | SPOKEN_WORDS
+        if word not in known and not (word.endswith("s") and word[:-1] in known):  # "Foresters"
             return False
     return True
 

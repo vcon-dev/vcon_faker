@@ -24,6 +24,11 @@ Four industries, and calls that sound less alike.
 - Holds play hold music instead of silence.
 - The run pauses while free memory is under a floor, and stops writing scripts at a spending cap
   shared by a corpus's runs; an overall index page covers a corpus.
+- From the first corpus run: a caller phoning about a relative is given the relative's name (and
+  a pediatric practice gets parents on the phone); callers never share a well-known person's name;
+  spoken dates, years and amounts match their digits in the check; a conversation may not stop
+  on an unanswered question; plurals of given words are not names; and a cached script that
+  fails today's checks is written again.
 
 ### Smart Trunk call mode
 

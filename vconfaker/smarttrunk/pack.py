@@ -64,6 +64,22 @@ INTERRUPTION_SHARE = 0.35  # of medium and long conversations and transfers
 PEOPLE_FORMS = {
     "provider": ("Dr. {last}", "the doctor or dentist at the practice the call is about"),
     "asked_for": ("{first}", "the person the caller meant to reach, who does not work here"),
+    "patient": ("{first} {last}", "the patient the call is about, in the caller's family"),
+}
+
+
+# Pairs of first and last names from the ``fake_names`` pools that belong to well-known people.
+# A caller or patient never gets one.
+FAMOUS_NAMES = {
+    "Martha Stewart", "Patrick Stewart", "James Taylor", "Elizabeth Taylor", "John Williams", "Larry King",
+    "Jennifer Lopez", "George Lopez", "George Washington", "John Adams", "Andrew Johnson", "Michael Johnson",
+    "Brian Wilson", "Russell Wilson", "Paul Allen", "Timothy Allen", "Steven Martin", "Kevin James", "Bruce Lee",
+    "Brenda Lee", "Robert Lee", "Diana Ross", "Betty White", "Jack White", "Emma Watson", "Emma Thompson",
+    "Samuel Jackson", "Janet Jackson", "Michael Jackson", "Andrew Jackson", "Jesse Jackson", "Peter Jackson",
+    "Joe Jackson", "Paul Walker", "Grace Kelly", "Gary Cooper", "Anthony Davis", "Willie Nelson", "Matthew Perry",
+    "Tyler Perry", "Joseph Smith", "John Smith", "Roy Rogers", "Carl Lewis", "Jerry Lewis", "John Lewis",
+    "Kevin Hart", "Mark Taylor", "Elizabeth Warren", "Kenneth Rogers", "Henry Ford", "Thomas Edison",
+    "Jimmy Carter", "James Carter", "Nancy Reagan", "Ronald Reagan", "Mary Phillips", "Billy Ray", "Johnny Cash",
 }
 
 
@@ -242,9 +258,11 @@ def build_plan(pack: dict[str, Any], *, count: int = 20, seed: int = 20261123) -
             caller = Speaker(None, "m", ROBOCALL_VOICE, 1.05)
         else:
             gender = rng.choice("fm")
-            caller = Speaker(
-                f"{first_name(gender)} {last_name()}", gender, next_voice(gender, {agent.voice}), round(rng.uniform(0.92, 1.1), 2)
-            )
+            first, last = first_name(gender), last_name()
+            if f"{first} {last}" in FAMOUS_NAMES:  # redrawn apart from the plan's own draws
+                other = random.Random(f"{pack['industry']}-{seed}-{i}-name")
+                last = other.choice([n for n in fake_names.last_names if f"{first} {n}" not in FAMOUS_NAMES and n not in used_last])
+            caller = Speaker(f"{first} {last}", gender, next_voice(gender, {agent.voice}), round(rng.uniform(0.92, 1.1), 2))
 
         after_hours = kind == "conversation" and scenario.get("after_hours", False)
         length = FIXED_LENGTH.get(kind) or rng.choices(list(CONVERSATION_LENGTHS), list(CONVERSATION_LENGTHS.values()))[0]
@@ -269,9 +287,20 @@ def build_plan(pack: dict[str, Any], *, count: int = 20, seed: int = 20261123) -
         context = pack["caller_context"]
         items = business["products"] if line in context.get("own_products_on", []) else context["items"]
         years = context.get("years")
-        caller_context = context["template"].format(
-            item=rng.choice(items), year=rng.randint(*years) if years else ""
-        ).replace("  ", " ")
+        item = rng.choice(items)
+        if business.get("caller_items"):  # e.g. parents at a pediatric practice; own generator, so the plan holds
+            item = random.Random(f"{pack['industry']}-{seed}-{i}-caller").choice(business["caller_items"])
+        caller_context = context["template"].format(item=item, year=rng.randint(*years) if years else "").replace("  ", " ")
+        if caller.name and item in context.get("family_items", []):
+            # The relative the call is about gets a name too, or the writer invents one. Drawn from
+            # its own generator so the rest of the plan does not change.
+            family = random.Random(f"{pack['industry']}-{seed}-{i}-family")
+            pool = fake_names.female_names if family.random() < 0.5 else fake_names.male_names
+            surname = caller.name.split()[-1]
+            first = family.choice([
+                n for n in pool if n not in (caller.name.split()[0], agent.name) and f"{n} {surname}" not in FAMOUS_NAMES
+            ])
+            people["patient"] = PEOPLE_FORMS["patient"][0].format(first=first, last=caller.name.split()[-1])
 
         plan.append(
             CallPlan(

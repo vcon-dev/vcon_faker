@@ -12,7 +12,8 @@
   "caller_area_codes": ["216", "303", "405", "608", "804", "971"],
   "caller_context": {
     "template": "They are {item}.",
-    "items": ["an established patient", "a new patient", "a parent calling about their child", "calling for an elderly parent who is a patient", "an established patient who has not been in for a while", "a patient who just changed jobs and insurance"]
+    "items": ["an established patient", "a new patient", "a parent calling about their child", "calling for an elderly parent who is a patient", "an established patient who has not been in for a while", "a patient who just changed jobs and insurance"],
+    "family_items": ["a parent calling about their child", "calling for an elderly parent who is a patient", "a parent calling about their child, who is an established patient", "a parent of a newborn"]
   },
   "products_label": "What the practice offers",
   "writer_rules": "Keep health details mild and everyday: a cough, a fever, a checkup, a toothache, a medicine the caller takes for blood pressure. No diagnoses beyond everyday ones, no medicine brand names or doses, no test values. Staff never give results or medical advice over the phone. Insurance is only ever 'your insurance' or 'your plan'. If anything sounds urgent, the staff member says to call 911 or go to the emergency room, and the call moves on.",
@@ -34,6 +35,7 @@
     {
       "id": "orrinvale", "name": "Orrinvale Pediatrics", "description": "a pediatric practice", "area_code": "804",
       "products": ["well-child visits", "sick visits", "vaccines", "sports physicals", "newborn checkups"],
+      "caller_items": ["a parent calling about their child", "a parent calling about their child, who is an established patient", "a parent of a newborn"],
       "hours": "Monday to Friday, 8 AM to 5 PM",
       "lines": {"front_desk": {"number": "555-0132", "screen": false}, "billing": {"number": "555-0133", "screen": false}}
     },

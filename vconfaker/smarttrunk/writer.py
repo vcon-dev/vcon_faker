@@ -197,6 +197,8 @@ def brief(plan: CallPlan, pack: dict[str, Any]) -> str:
         f"Length: {length['words'][0]} to {length['words'][1]} words in all, {length['turns'][0]} to {length['turns'][1]} turns "
         f"({length['says']})."
     )
+    if plan.kind in ("conversation", "wrong_number"):
+        lines.append("However short, the call comes to a natural end: a goodbye or a clear close, not a question left hanging.")
     if plan.transfer:
         lines.append(
             f"Transfer: partway through, {plan.agent.name} transfers the caller to {plan.colleague.name}, the "
@@ -253,6 +255,7 @@ class ScriptWriter:
             reject_places=bool(self.pack.get("reject_places")),
             call_start=plan.start,
             colleague=plan.transfer,
+            natural_end=plan.kind in ("conversation", "wrong_number"),
         )
 
     def write(self, plan: CallPlan) -> Script:

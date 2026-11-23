@@ -9,7 +9,6 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo
 
 import fake_names
 import jsonschema
@@ -513,3 +512,72 @@ def test_parakeet_goes_online_only_on_a_cache_miss(monkeypatch, tmp_path):
     monkeypatch.setattr(check_module.subprocess, "run", _fake_parakeet(calls, envs, fail_first_with=miss))
     assert len(check_module.Transcriber("parakeet-mlx").transcribe_many([tmp_path / "a.mp3"])) == 1
     assert envs == ["1", "0"]
+
+
+# --- Fixes from corpus v1 --------------------------------------------------------------------------
+
+
+def test_a_caller_phoning_about_a_relative_is_given_the_relatives_name():
+    pack = PACKS["clinic"]
+    family = [p for p in PLANS["clinic"] if p.caller.name
+              and p.caller_context.removeprefix("They are ").rstrip(".") in pack["caller_context"]["family_items"]]
+    assert family
+    for p in family:
+        patient = p.people["patient"]
+        assert patient.split()[-1] == p.caller.name.split()[-1] and patient != p.caller.name
+        assert patient in allowed_names(p) and patient in brief(p, pack)
+
+
+def test_the_pediatric_practice_gets_parents_on_the_phone():
+    kids = [p for p in PLANS["clinic"] if p.business["id"] == "orrinvale"]
+    assert kids and all("child" in p.caller_context or "newborn" in p.caller_context for p in kids)
+
+
+def test_spoken_dates_years_and_amounts_match_their_digits():
+    assert word_error_rate("March ninth, nineteen eighty-five.", "March 9th, 1985.") == 0.0
+    assert word_error_rate("Twenty twenty-four", "2024") == 0.0
+    assert word_error_rate("about two fifteen", "about 2:15") == 0.0
+    assert word_error_rate("It runs thirty two thousand", "It runs $32,000") == 0.0
+    assert word_error_rate("two hundred fifty", "250") == 0.0
+    assert word_error_rate("call five five five zero one five two", "call 555-0152") == 0.0
+
+
+def test_the_brief_asks_for_a_natural_end():
+    assert "natural end" in brief(PLAN[0], PACK)
+
+
+def test_plurals_of_given_words_are_not_names():
+    from vconfaker.smarttrunk.hygiene import _covered
+
+    assert _covered("Foresters", {"forester"})
+    assert not _covered("Zentrovas", {"forester"})
+
+
+def test_no_caller_or_relative_shares_a_famous_name():
+    from vconfaker.smarttrunk.pack import FAMOUS_NAMES
+
+    for plan in PLANS.values():
+        for p in plan:
+            assert p.caller.name not in FAMOUS_NAMES and p.people.get("patient") not in FAMOUS_NAMES
+
+
+def test_a_conversation_may_not_stop_on_an_unanswered_question():
+    plan = _plan()
+    script = _script(plan)
+    script["turns"].append({"speaker": "business", "text": "Does that work for you?", "interrupts": False})
+    assert any("question" in p for p in _check(plan, script, natural_end=True).problems)
+    assert not any("question" in p for p in _check(plan, script).problems)  # a hang-up may stop anywhere
+
+
+def test_a_cached_script_that_fails_todays_checks_is_written_again(tmp_path):
+    from vconfaker.smarttrunk.run import _script_for
+
+    plan = _plan(length="short", transfer=False)
+    bad = _script(plan, "CarMax offered me more.")
+    (tmp_path / f"{plan.call_id}.json").write_text(json.dumps({"plan": plan.summary(), "script": {
+        **bad, "attempts": 1, "rejected": [], "notes": []}}, default=str))
+    writer = ScriptWriter(PACK, client=_fake_client(iter([_script(plan)])))
+    script, cached = _script_for(writer, plan, tmp_path)
+    assert not cached and writer.usage.requests == 1
+    script, cached = _script_for(writer, plan, tmp_path)  # the new one is cached and passes
+    assert cached and writer.usage.requests == 1

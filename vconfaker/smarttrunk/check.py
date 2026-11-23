@@ -39,6 +39,44 @@ _CACHE_MISS = re.compile(
 _SAME = {"okay": "ok", "alright": "all right", "a.m.": "am", "p.m.": "pm", "%": " percent"}
 
 
+_VALUES = {
+    **{w: int(d) for w, d in _DIGITS.items()},
+    "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
+    "ninth": 9, "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14, "fifteenth": 15,
+    "sixteenth": 16, "seventeenth": 17, "eighteenth": 18, "nineteenth": 19, "twentieth": 20, "thirtieth": 30,
+}
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_SCALES = {"hundred": "00", "thousand": "000"}
+
+
+def _spoken_numbers(words: list[str]) -> list[str]:
+    """Number words as digit strings: "nineteen eighty five" -> 19, 85; "ninth" -> 9; "thirty two
+    thousand" -> 32, 000. A scale word counts only at the end of a number ("two hundred fifty" is
+    2, 50), which is close enough once everything is compared digit by digit."""
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w in _TENS:
+            value = _TENS[w]
+            if i + 1 < len(words) and words[i + 1] in _VALUES and _VALUES[words[i + 1]] < 10:
+                value += _VALUES[words[i + 1]]
+                i += 1
+            out.append(str(value))
+        elif w in _VALUES and w not in ("oh", "second") or (w in ("oh", "second") and out and out[-1].isdigit()):
+            out.append(str(_VALUES[w]))
+        elif w in _SCALES and out and out[-1].isdigit():
+            nxt = words[i + 1] if i + 1 < len(words) else ""
+            if nxt not in _VALUES and nxt not in _TENS:
+                out.append(_SCALES[w])
+        else:
+            out.append(w)
+        i += 1
+    return out
+
+
 def normalise(text: str) -> list[str]:
     text = text.lower()
     for a, b in _SAME.items():
@@ -46,15 +84,11 @@ def normalise(text: str) -> list[str]:
     text = re.sub(r"(?<=\d),(?=\d{3})", "", text)  # 32,000 -> 32000
     text = re.sub(r"[-/]", " ", text)
     text = re.sub(r"[^a-z0-9' ]+", " ", text)
+    tokens = [re.sub(r"^(\d+)(?:st|nd|rd|th)$", r"\1", w.strip("'")) for w in text.split()]  # 9th -> 9
     words: list[str] = []
-    for w in text.split():
-        w = w.strip("'")
-        if not w:
-            continue
+    for w in _spoken_numbers([t for t in tokens if t]):
         if w.isdigit():
-            words.extend(w)  # "555-0152" and "five five five, zero one five two" compare equal
-        elif w in _DIGITS:
-            words.append(_DIGITS[w])
+            words.extend(w)  # compared digit by digit: "555-0152" and "five five five zero one five two"
         else:
             words.append(w)
     return words

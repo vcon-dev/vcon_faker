@@ -103,12 +103,16 @@ CACHE_KEYS = ("call_id", "scenario", "business", "caller", "agent", "caller_cont
 
 
 def _script_for(writer: ScriptWriter, plan: CallPlan, scripts_dir: Path) -> tuple[Script, bool]:
+    """The cached script when its plan is unchanged and it still passes today's checks, else a new one."""
     path = scripts_dir / f"{plan.call_id}.json"
     if path.is_file():
         saved = json.loads(path.read_text())
         current = json.loads(json.dumps(plan.summary()))
         if all(saved.get("plan", {}).get(k) == current.get(k) for k in CACHE_KEYS):
-            return Script(**saved["script"]), True
+            verdict = writer.check(plan, saved["script"])
+            if verdict.ok:
+                return Script(**saved["script"]), True
+            print(f"[{plan.index:02d}] {plan.call_id}: the cached script fails today's checks, written again: {verdict.problems}", flush=True)
     script = writer.write(plan)
     path.write_text(json.dumps({"plan": plan.summary(), "script": script.to_dict()}, indent=2))
     return script, False
