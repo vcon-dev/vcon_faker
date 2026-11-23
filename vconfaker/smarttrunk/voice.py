@@ -22,8 +22,8 @@ _DIGIT_WORDS = "zero one two three four five six seven eight nine".split()
 def speakable(text: str) -> str:
     """Phone numbers spelled out digit by digit, as people say them.
 
-    Kokoro reads "555-0151" as a different number (the recognizer hears "550-5151"), so the
-    audio would carry a number outside the fictional range. Spelled digits come back right.
+    Kokoro reads a written number such as "555-0151" as a different number, so the audio would
+    carry a number outside the fictional range. Spelled digits come back right.
     """
 
     def spell(m: re.Match[str]) -> str:

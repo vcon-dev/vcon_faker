@@ -2,10 +2,12 @@
 
 The writer is told exactly which names it may use. This module checks that it did:
 
-* every phone number is in the fictional 555-0100 to 555-0199 range;
+* every phone number, written or spoken digit by digit, is in the fictional 555-0100 to
+  555-0199 range (a bare run of digits such as a stock number is not a phone number);
 * no email address, web address or "dot com";
-* no name from a list of real dealer groups, car retailers, parts chains, valuation sites,
-  lenders and insurers;
+* no name from ``REAL_NAMES``: chains, banks, insurers and platforms common to every
+  industry, plus the industry's own list (for dealerships: dealer groups, car retailers, service
+  and parts chains, valuation sites and auto lenders);
 * every person the script names (spaCy PERSON entities and the writer's own ``names_used``)
   is one of the names the call was given, and every organisation (ORG) is the business, a
   vehicle make or model, or a department.
@@ -20,18 +22,43 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
-# Real businesses a dealership call could plausibly drop in. Matched as whole words, ignoring case.
-REAL_BUSINESSES = [
-    "AutoNation", "CarMax", "Carvana", "Vroom", "Penske", "Lithia", "Hendrick", "Sonic Automotive",
-    "Group 1", "Asbury", "Jiffy Lube", "Pep Boys", "AutoZone", "O'Reilly", "Advance Auto",
-    "NAPA", "Firestone", "Midas", "Meineke", "Valvoline", "Discount Tire", "Les Schwab",
-    "Kelley Blue Book", "KBB", "Carfax", "Edmunds", "TrueCar", "Cars.com", "Autotrader", "CarGurus",
-    "Ally", "Capital One", "Chase", "Wells Fargo", "Bank of America", "Credit Karma",
-    "Geico", "Progressive", "State Farm", "Allstate", "Liberty Mutual", "AAA",
-    "Enterprise", "Hertz", "Avis", "Budget", "Uber", "Lyft",
-    "Google", "Amazon", "Facebook", "Craigslist", "Venmo", "PayPal", "Zelle",
-    "Toyota Financial", "Ford Credit", "Honda Financial", "Subaru Motors Finance",
-]
+# Real businesses a call could plausibly drop in, by industry. "common" applies to every
+# industry; each pack's industry adds its own list, and a pack may add more under
+# "real_businesses". Matched as whole words: names of five or more letters in any case, shorter
+# names and the AMBIGUOUS words only as written.
+REAL_NAMES: dict[str, tuple[str, ...]] = {
+    "common": (
+        # big-box retail, warehouse clubs and home improvement
+        "Walmart", "Costco", "Sam's Club", "Target", "Home Depot", "Lowe's", "Best Buy", "BJ's",
+        # banks, lenders and payment apps
+        "Ally", "Capital One", "Chase", "Wells Fargo", "Bank of America", "Santander", "Credit Karma",
+        "Venmo", "PayPal", "Zelle",
+        # insurers
+        "Geico", "Progressive", "State Farm", "Allstate", "Liberty Mutual", "AAA",
+        # rental, rides and the big platforms
+        "Enterprise", "Hertz", "Avis", "Budget", "Uber", "Lyft", "Google", "Amazon", "Facebook", "Craigslist",
+    ),
+    "dealership": (
+        # dealer groups and car retailers, including the ones that sell direct
+        "AutoNation", "CarMax", "Carvana", "Vroom", "Tesla", "Penske", "Lithia", "Hendrick",
+        "Sonic Automotive", "Group 1", "Asbury",
+        # service, tire, glass and collision chains
+        "Jiffy Lube", "Pep Boys", "AutoZone", "O'Reilly", "Advance Auto", "NAPA", "Firestone", "Midas",
+        "Meineke", "Valvoline", "Discount Tire", "Les Schwab", "Mavis", "Monro", "Take 5", "Safelite",
+        "Maaco", "Caliber Collision", "Christian Brothers Automotive",
+        # valuation and listing sites, auto lenders and service contracts
+        "Kelley Blue Book", "KBB", "Carfax", "Edmunds", "TrueCar", "Cars.com", "Autotrader", "CarGurus",
+        "Toyota Financial", "Ford Credit", "Honda Financial", "Subaru Motors Finance", "Westlake Financial",
+        "Credit Acceptance", "CarShield",
+    ),
+    # Still to fill before those packs are written:
+    "clinic": (),  # hospital systems, urgent-care and pharmacy chains, labs, insurers' plan names
+    "municipal": (),  # real towns, counties and agencies, utilities, state DMV names
+    "home_services": (),  # national plumbing, HVAC, pest, roofing and cleaning chains; lead marketplaces
+}
+
+# Ordinary words in lower case: matched only as written, whatever their length.
+AMBIGUOUS = {"Ally", "Chase", "Budget", "Progressive", "Enterprise", "Target", "Group 1", "Take 5", "Advance Auto"}
 
 DEPARTMENT_WORDS = {
     "sales", "service", "parts", "finance", "department", "desk", "counter", "office", "manager",
@@ -39,11 +66,77 @@ DEPARTMENT_WORDS = {
     "and", "of", "auto", "motors", "group", "dealership", "dealer",
 }
 
-PHONE = re.compile(r"(?<!\d)(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)?(\d{3})[\s.-]?(\d{4})(?!\d)")
+# A phone number written the way phone numbers are written: 555-0152, 555 0152, (614) 555-0152,
+# 614.555.0152, +1 614 555 0152. A bare run of digits (a stock number, 1234567) is not one.
+PHONE = re.compile(
+    r"(?<![\d-])(?:\+?1[\s.-])?(?:\(\d{3}\)\s?|\d{3}[\s.-])?(\d{3})[\s.-](\d{4})(?![\d-])"
+)
 EMAIL = re.compile(r"\S+@\S+|\bat\s+\w+\s+dot\s+(?:com|net|org)\b", re.I)
 WEB = re.compile(r"\bwww\b|https?://|\b\w+\.(?:com|net|org|biz|us|auto|io)\b|\bdot\s+com\b", re.I)
-# Case-sensitive: "budget", "chase" and "progressive" are ordinary words in lower case.
-REAL = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in REAL_BUSINESSES) + r")\b")
+
+DIGIT_WORDS = {
+    "zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+}
+_DIGIT_RUN = re.compile(r"\b(?:(?:" + "|".join(DIGIT_WORDS) + r")\b[\s,.-]*){7,}", re.I)
+
+
+def digit_words_as_digits(text: str) -> str:
+    """Runs of seven or more spoken digits ("five five five, zero two zero zero") as a written
+    number in phone shape (555-0200), so ``PHONE`` sees them. Shorter runs are left alone."""
+
+    def write(m: re.Match[str]) -> str:
+        d = "".join(DIGIT_WORDS[w.lower()] for w in re.findall(r"[a-z]+", m.group(0), re.I))
+        if len(d) == 7:
+            d = f"{d[:3]}-{d[3:]}"
+        elif len(d) == 10:
+            d = f"{d[:3]}-{d[3:6]}-{d[6:]}"
+        elif len(d) == 11 and d[0] == "1":
+            d = f"1-{d[1:4]}-{d[4:7]}-{d[7:]}"
+        return d + (" " if m.group(0)[-1:] in " ,.-" else "")
+
+    return _DIGIT_RUN.sub(write, text)
+
+
+def in_fictional_range(exchange: str, line: str) -> bool:
+    return exchange == "555" and 100 <= int(line) <= 199
+
+
+def numbers_outside_range(text: str) -> list[str]:
+    """Phone numbers, written or spoken as digits, that are outside 555-0100 to 555-0199."""
+    return [
+        m.group(0).strip()
+        for m in PHONE.finditer(digit_words_as_digits(text))
+        if not in_fictional_range(m.group(1), m.group(2))
+    ]
+
+
+def real_names(industry: str, extra: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
+    return (*REAL_NAMES["common"], *REAL_NAMES.get(industry, ()), *extra)
+
+
+@lru_cache(maxsize=16)
+def _real_patterns(names: tuple[str, ...]) -> tuple[re.Pattern[str] | None, re.Pattern[str] | None]:
+    def letters(n: str) -> int:
+        return sum(ch.isalpha() for ch in n)
+
+    loose = [n for n in names if letters(n) >= 5 and n not in AMBIGUOUS]
+    strict = [n for n in names if n not in loose]
+
+    def compile_(group: list[str], flags: int) -> re.Pattern[str] | None:
+        if not group:
+            return None
+        return re.compile(r"(?<!\w)(?:" + "|".join(re.escape(n) for n in group) + r")(?!\w)", flags)
+
+    return compile_(loose, re.I), compile_(strict, 0)
+
+
+def real_business_matches(text: str, industry: str = "dealership", extra: list[str] | tuple[str, ...] = ()) -> list[str]:
+    found = []
+    for pattern in _real_patterns(real_names(industry, extra)):
+        if pattern is not None:
+            found += [m.group(0) for m in pattern.finditer(text)]
+    return found
 
 
 @dataclass
@@ -73,8 +166,14 @@ def check_script(
     allowed_names: list[str],
     products: list[str],
     turn_range: tuple[int, int],
+    industry: str = "dealership",
+    extra_real: list[str] | tuple[str, ...] = (),
 ) -> Verdict:
-    """Problems that reject the script, and notes that only get recorded."""
+    """Problems that reject the script, and notes that only get recorded.
+
+    ``industry`` picks the list of real names to refuse (``REAL_NAMES``), and ``extra_real``
+    adds a pack's own.
+    """
     v = Verdict()
     turns = script.get("turns") or []
     lo, hi = turn_range
@@ -86,16 +185,14 @@ def check_script(
             break
 
     text = "\n".join(str(t.get("text", "")) for t in turns)
-    for m in PHONE.finditer(text):
-        exchange, line = m.group(1), m.group(2)
-        if not (exchange == "555" and 100 <= int(line) <= 199):
-            v.problems.append(f"phone number outside 555-0100..0199: {m.group(0).strip()!r}")
+    for number in numbers_outside_range(text):
+        v.problems.append(f"phone number outside 555-0100..0199: {number!r}")
     if EMAIL.search(text):
         v.problems.append("mentions an email address")
     if WEB.search(text):
         v.problems.append("mentions a web address")
-    for m in REAL.finditer(text):
-        v.problems.append(f"names a real business: {m.group(0)!r}")
+    for name in real_business_matches(text, industry, extra_real):
+        v.problems.append(f"names a real business: {name!r}")
 
     ok_words = allowed_words(allowed_names, products)
     person_words = allowed_words(allowed_names, [])
@@ -112,12 +209,9 @@ def check_script(
             else:
                 v.problems.append(f"names a person the call was not given: {ent!r}")
         elif label == "ORG" and not _covered(ent, ok_words):
-            if len(ent.split()) == 1:
-                # one word ("Front", "Recall") is usually a common noun to spaCy's small model;
-                # a real business named in one word is caught by REAL above
-                v.notes.append(f"possible organisation: {ent!r}")
-            else:
-                v.problems.append(f"names an organisation the call was not given: {ent!r}")
+            # one word or several: a name the call was not given is refused, at the price of
+            # the occasional rewrite when spaCy's small model tags a common noun ("Front")
+            v.problems.append(f"names an organisation the call was not given: {ent!r}")
         elif label in ("GPE", "LOC", "FAC") and not _covered(ent, ok_words):
             v.notes.append(f"place named: {ent!r}")
     v.problems = list(dict.fromkeys(v.problems))
@@ -144,7 +238,7 @@ def _covered(name: str, ok_words: set[str]) -> bool:
     """True when every word of ``name`` is allowed, or is not a name at all.
 
     Words with digits (a VIN's last six, CX-5) and short all-capital acronyms (VIN, SUV) are not
-    names; real businesses written as acronyms are caught by ``REAL`` instead.
+    names; real businesses written as acronyms are caught by ``REAL_NAMES`` instead.
     """
     for raw in re.split(r"[\s/]+", name):
         word = raw.strip(".,'\"?!:;()")

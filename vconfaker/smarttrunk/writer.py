@@ -218,6 +218,8 @@ class ScriptWriter:
                 allowed_names=allowed_names(plan),
                 products=products(plan, self.pack),
                 turn_range=tuple(plan.scenario["turns"]),
+                industry=plan.industry,
+                extra_real=self.pack.get("real_businesses", ()),
             )
             if verdict.ok:
                 return Script(

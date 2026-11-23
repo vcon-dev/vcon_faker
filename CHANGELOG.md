@@ -10,7 +10,10 @@ Smart Trunk call mode (`python -m vconfaker.smarttrunk`), for the Smart Trunk st
   screened numbers, a simulated `voice-screen` entry.
 - A dealership scenario pack with invented businesses and numbers in 555-0100 to 555-0199.
 - Scripts by Claude (`claude-sonnet-5-5`, structured output, server-side fallbacks), checked for
-  real names, companies, numbers, emails and web addresses before any audio is made.
+  real names, companies, numbers, emails and web addresses before any audio is made. Real
+  business names are kept per industry (`REAL_NAMES`: common, dealership, clinic, municipal,
+  home services) and matched in any case from five letters up; phone numbers are matched by
+  shape, written or spoken digit by digit, so a bare stock number is not one.
 - Local voices with Kokoro-82M (mlx-audio), telephone audio with ffmpeg, and a transcript check
   with parakeet-mlx that re-voices garbled calls.
 - `vconfaker/governance.py`: the synthetic markers (`lawful_basis` with `legitimate_interests`,

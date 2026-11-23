@@ -38,7 +38,7 @@ def test_numbers_outside_the_fictional_range_are_refused():
     with pytest.raises(ValueError):
         fictional_number("614", "555-0200")
     with pytest.raises(ValueError):
-        fictional_number("614", "867-5309")
+        fictional_number("614", "555-0099")
 
 
 def _script(plan, extra_turn=None):
@@ -63,7 +63,7 @@ def _check(plan, script):
     "line,reason",
     [
         ("Call me back at 555-0200.", "phone number"),
-        ("Or try 614-867-5309.", "phone number"),
+        ("Or try (614) 555-0200.", "phone number"),
         ("Email me at someone@example.com.", "email"),
         ("I saw it on your site, something dot com.", "web address"),
         ("CarMax offered me more.", "real business"),
@@ -169,3 +169,130 @@ def test_writer_retries_a_rejected_script_and_counts_tokens():
     assert script.attempts == 2 and script.rejected
     assert writer.usage.requests == 2
     assert writer.usage.cost_usd == pytest.approx((2000 * 2 + 1000 * 10) / 1e6)
+
+
+# --- Review fixes: each test below failed before its fix. ---------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from vconfaker.smarttrunk import check as check_module  # noqa: E402
+from vconfaker.smarttrunk import hygiene  # noqa: E402
+from vconfaker.smarttrunk.check import stray_numbers  # noqa: E402
+
+
+def _caller_plan():
+    return next(p for p in PLAN if p.caller.name)
+
+
+def _real_business_hits(line, **kwargs):
+    plan = _caller_plan()
+    verdict = check_script(
+        _script(plan, line), allowed_names=allowed_names(plan), products=products(plan, PACK), turn_range=(4, 10), **kwargs
+    )
+    return [p for p in verdict.problems if "real business" in p]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Honestly carmax offered me more.",  # lower case, five or more letters
+        "I priced one at the tesla store.",
+        "Walmart had wiper blades cheaper.",
+        "I could get it at Costco.",
+        "Mavis did my tires last time.",
+        "My loan is with Santander.",
+        "I saw floor mats at Sam's Club.",
+        "Home Depot sells a charger like that.",
+    ],
+)
+def test_real_business_names_are_rejected_in_any_case(line):
+    assert _real_business_hits(line)
+
+
+@pytest.mark.parametrize(
+    "line", ["What's your budget for this?", "I'll chase that down for you.", "It's an enterprise fleet thing."]
+)
+def test_short_or_ambiguous_names_stay_ordinary_words_in_lower_case(line):
+    assert not _real_business_hits(line)
+
+
+def test_each_industry_keeps_its_own_list_of_real_names(monkeypatch):
+    assert {"common", "dealership", "clinic", "municipal", "home_services"} <= set(hygiene.REAL_NAMES)
+    monkeypatch.setitem(hygiene.REAL_NAMES, "clinic", ("Examplecare Health",))
+    line = "Examplecare Health has my records."
+    assert _real_business_hits(line, industry="clinic")
+    assert not _real_business_hits(line, industry="dealership")
+    assert _real_business_hits("Zentrova Pharmacy filled it.", extra_real=["Zentrova"])  # a pack's own names
+
+
+def test_a_one_word_organisation_not_given_rejects_the_script(monkeypatch):
+    plan = _caller_plan()
+    monkeypatch.setattr(hygiene, "_entities", lambda texts: [("ORG", "Zentrova", False)])
+    assert any("organisation" in p for p in _check(plan, _script(plan)).problems)
+    monkeypatch.setattr(hygiene, "_entities", lambda texts: [("ORG", "Service", False)])
+    assert _check(plan, _script(plan)).ok
+
+
+def test_spelled_out_numbers_outside_the_range_are_caught():
+    plan = _caller_plan()
+    verdict = _check(plan, _script(plan, "Call me on five five five zero two zero zero."))
+    assert any("phone number" in p for p in verdict.problems), verdict.problems
+    assert _check(plan, _script(plan, "Call me on five five five, zero one five two.")).ok
+    assert stray_numbers("call me on five five five zero two zero zero")
+    assert stray_numbers("call me on five five five zero one five two") == []
+
+
+def test_a_seven_digit_stock_number_is_not_a_phone_number():
+    plan = _caller_plan()
+    verdict = _check(plan, _script(plan, "The stock number is 1234567."))
+    assert not any("phone number" in p for p in verdict.problems), verdict.problems
+    assert stray_numbers("the stock number is 1234567", expected="The stock number is 1234567.") == []
+    # a phone number the recognizer ran together is still caught
+    assert stray_numbers("my number is 5550200", expected="My number is 555-0152.") == ["5550200"]
+
+
+def test_an_area_coded_number_in_the_fictional_range_passes():
+    plan = _caller_plan()
+    assert _check(plan, _script(plan, "Or try (614) 555-0142.")).ok
+
+
+def _fake_parakeet(calls, envs, fail_first_with=None):
+    def run(cmd, **kwargs):
+        envs.append(kwargs["env"]["HF_HUB_OFFLINE"])
+        if fail_first_with and len(envs) == 1:
+            return SimpleNamespace(returncode=1, stdout="", stderr=fail_first_with)
+        files = [a for a in cmd if a.endswith(".mp3")]
+        calls.append(files)
+        out = Path(cmd[cmd.index("--output-dir") + 1]) if "--output-dir" in cmd else Path(cmd[cmd.index(files[0]) - 1])
+        for f in files:
+            (out / f"{Path(f).stem}.json").write_text(json.dumps({"text": "hello", "sentences": []}))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    return run
+
+
+def test_the_plain_cli_fallback_runs_at_most_five_files_per_process(monkeypatch, tmp_path):
+    calls, envs = [], []
+    monkeypatch.setattr(check_module, "_interpreter_of", lambda binary: None)
+    monkeypatch.setattr(check_module.subprocess, "run", _fake_parakeet(calls, envs))
+    audio = [tmp_path / f"call-{i:02d}.mp3" for i in range(12)]
+    results = check_module.Transcriber("parakeet-mlx").transcribe_many(audio)
+    assert len(results) == 12
+    assert [len(c) for c in calls] == [5, 5, 2]
+
+
+def test_parakeet_goes_online_only_on_a_cache_miss(monkeypatch, tmp_path):
+    monkeypatch.setattr(check_module, "_interpreter_of", lambda binary: None)
+    calls, envs = [], []
+    monkeypatch.setattr(
+        check_module.subprocess, "run", _fake_parakeet(calls, envs, fail_first_with="RuntimeError: Metal device lost")
+    )
+    with pytest.raises(RuntimeError):
+        check_module.Transcriber("parakeet-mlx").transcribe_many([tmp_path / "a.mp3"])
+    assert envs == ["1"]
+
+    calls, envs = [], []
+    miss = "huggingface_hub.errors.LocalEntryNotFoundError: Cannot find the requested files in the disk cache"
+    monkeypatch.setattr(check_module.subprocess, "run", _fake_parakeet(calls, envs, fail_first_with=miss))
+    assert len(check_module.Transcriber("parakeet-mlx").transcribe_many([tmp_path / "a.mp3"])) == 1
+    assert envs == ["1", "0"]

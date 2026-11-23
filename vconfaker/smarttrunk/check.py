@@ -12,19 +12,25 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .hygiene import DIGIT_WORDS as _DIGITS
+from .hygiene import in_fictional_range, numbers_outside_range
+
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 MAX_WER = 0.20
-
-_DIGITS = {
-    "zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
-}
+CLI_CHUNK = 5  # files per plain-CLI process, whose memory grows about 1.5 GB per file
+# What huggingface_hub says when HF_HUB_OFFLINE=1 and the model is not in the local cache.
+_CACHE_MISS = re.compile(
+    r"LocalEntryNotFoundError|Cannot find the requested files in the (?:local|disk) cache|"
+    r"outgoing traffic has been disabled",
+    re.I,
+)
 _SAME = {"okay": "ok", "alright": "all right", "a.m.": "am", "p.m.": "pm", "%": " percent"}
 
 
@@ -97,43 +103,55 @@ class Transcriber:
         self.peak_footprint_bytes = 0
         self.peak_rss_bytes = 0
 
-    def _command(self, audio: list[Path], out: Path) -> list[str]:
-        """The installed package run by ``RUNNER`` under its own interpreter, else the plain CLI.
+    def _commands(self, audio: list[Path], out: Path) -> list[tuple[list[str], list[Path]]]:
+        """The processes to run: (command, the files it transcribes).
 
-        The CLI keeps MLX's buffer cache between files, so its footprint grows by about 1.5 GB
-        per call; ``RUNNER`` loads the model once and clears the cache after every file, using
-        the CLI's own JSON formatter.
+        Normally one: the installed package run by ``RUNNER`` under its own interpreter, which
+        loads the model once and clears MLX's buffer cache after every file. Without it, the plain
+        CLI keeps that cache between files and grows by about 1.5 GB per file, so it runs at most
+        ``CLI_CHUNK`` files per process, and says so.
         """
         interpreter = _interpreter_of(self.binary)
         if interpreter:
             runner = out / "_runner.py"
             runner.write_text(RUNNER)
-            return [interpreter, "-I", str(runner), self.model, str(out), *map(str, audio)]
-        return [self.binary, *map(str, audio), "--model", self.model, "--output-format", "json", "--output-dir", str(out)]
+            return [([interpreter, "-I", str(runner), self.model, str(out), *map(str, audio)], audio)]
+        print(
+            f"note: parakeet_mlx is not importable from {self.binary}'s interpreter; running the plain CLI "
+            f"{CLI_CHUNK} files at a time, one model load each",
+            file=sys.stderr,
+        )
+        chunks = [audio[i : i + CLI_CHUNK] for i in range(0, len(audio), CLI_CHUNK)]
+        return [
+            ([self.binary, *map(str, chunk), "--model", self.model, "--output-format", "json", "--output-dir", str(out)], chunk)
+            for chunk in chunks
+        ]
+
+    def _run(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        """Run with the model hub offline; go online only when the model is not in the cache."""
+        timer = ["/usr/bin/time", "-l"] if Path("/usr/bin/time").exists() else []
+        done = subprocess.run([*timer, *cmd], capture_output=True, text=True, env={**os.environ, "HF_HUB_OFFLINE": "1"})
+        if done.returncode != 0 and _CACHE_MISS.search(done.stderr or ""):
+            done = subprocess.run([*timer, *cmd], capture_output=True, text=True, env={**os.environ, "HF_HUB_OFFLINE": "0"})
+        if done.returncode != 0:
+            raise RuntimeError(f"parakeet-mlx failed: {(done.stderr or '')[-800:]}")
+        return done
 
     def transcribe_many(self, audio: list[Path]) -> dict[Path, dict[str, Any]]:
         out = Path(tempfile.mkdtemp(prefix="parakeet-"))
         try:
-            cmd = self._command(audio, out)
-            timer = ["/usr/bin/time", "-l"] if Path("/usr/bin/time").exists() else []
-            t0 = time.monotonic()
-            done = None
-            for offline in ("1", "0"):  # the model is normally cached: skip the hub unless it is not
-                env = {**os.environ, "HF_HUB_OFFLINE": offline}
-                done = subprocess.run([*timer, *cmd], capture_output=True, text=True, env=env)
-                if done.returncode == 0:
-                    break
-            if done is None or done.returncode != 0:
-                raise RuntimeError(f"parakeet-mlx failed: {(done.stderr if done else '')[-800:]}")
-            self.busy_seconds += time.monotonic() - t0
-            self.batches += 1
-            self._read_time(done.stderr)
             results = {}
-            for path in audio:
-                found = out / f"{path.stem}.json"
-                if not found.is_file():
-                    raise RuntimeError(f"parakeet-mlx wrote no JSON for {path.name}")
-                results[path] = json.loads(found.read_text())
+            for cmd, files in self._commands(audio, out):
+                t0 = time.monotonic()
+                done = self._run(cmd)
+                self.busy_seconds += time.monotonic() - t0
+                self.batches += 1
+                self._read_time(done.stderr)
+                for path in files:
+                    found = out / f"{path.stem}.json"
+                    if not found.is_file():
+                        raise RuntimeError(f"parakeet-mlx wrote no JSON for {path.name}")
+                    results[path] = json.loads(found.read_text())
             return results
         finally:
             shutil.rmtree(out, ignore_errors=True)
@@ -191,14 +209,23 @@ def _interpreter_of(binary: str) -> str | None:
     return interpreter if probe.returncode == 0 else None
 
 
-def stray_numbers(text: str) -> list[str]:
-    """Phone-like numbers in what the recognizer heard that are outside 555-0100..0199."""
-    from .hygiene import PHONE
+_BARE_RUN = re.compile(r"(?<![\d-])(?:\d{7}|\d{10}|1\d{10})(?![\d-])")
 
-    return [
-        m.group(0).strip() for m in PHONE.finditer(text)
-        if not (m.group(1) == "555" and 100 <= int(m.group(2)) <= 199)
-    ]
+
+def stray_numbers(text: str, expected: str = "") -> list[str]:
+    """Numbers in what the recognizer heard that could be a phone number outside 555-0100..0199.
+
+    Written or spelled-out phone numbers are checked as in the script hygiene. The recognizer also
+    runs a spoken number together ("5550200"), so a bare run of 7, 10 or 11 digits counts too,
+    unless it is in the fictional range or the script itself said exactly that (a stock number).
+    """
+    stray = numbers_outside_range(text)
+    said = set(_BARE_RUN.findall(expected))
+    for run in _BARE_RUN.findall(text):
+        local = run[-7:]
+        if not in_fictional_range(local[:3], local[3:]) and run not in said:
+            stray.append(run)
+    return stray
 
 
 def to_check(result: dict[str, Any], expected: str, seconds: float = 0.0) -> Check:
@@ -206,7 +233,7 @@ def to_check(result: dict[str, Any], expected: str, seconds: float = 0.0) -> Che
     outside the fictional range (it goes into the vCon as is)."""
     text = (result.get("text") or "").strip()
     wer = word_error_rate(expected, text)
-    stray = stray_numbers(text)
+    stray = stray_numbers(text, expected)
     sentences = [
         {k: s.get(k) for k in ("start", "end", "text", "confidence") if k in s}
         for s in result.get("sentences") or []
